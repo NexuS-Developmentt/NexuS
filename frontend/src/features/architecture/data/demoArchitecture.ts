@@ -31,7 +31,7 @@ export const NODE_IDS = {
 const _demoNodes: Node<ArchitectureNodeData>[] = [
   {
     id: NODE_IDS.API_GATEWAY,
-    type: 'default',
+    type: 'architectureNode',
     position: { x: 400, y: 40 },
     data: {
       label:       'API Gateway',
@@ -45,7 +45,7 @@ const _demoNodes: Node<ArchitectureNodeData>[] = [
   },
   {
     id: NODE_IDS.AUTH_SERVICE,
-    type: 'default',
+    type: 'architectureNode',
     position: { x: 100, y: 200 },
     data: {
       label:       'Authentication Service',
@@ -59,7 +59,7 @@ const _demoNodes: Node<ArchitectureNodeData>[] = [
   },
   {
     id: NODE_IDS.ORDER_SERVICE,
-    type: 'default',
+    type: 'architectureNode',
     position: { x: 400, y: 200 },
     data: {
       label:       'Order Service',
@@ -73,7 +73,7 @@ const _demoNodes: Node<ArchitectureNodeData>[] = [
   },
   {
     id: NODE_IDS.PAYMENT_SERVICE,
-    type: 'default',
+    type: 'architectureNode',
     position: { x: 100, y: 400 },
     data: {
       label:       'Payment Service',
@@ -87,7 +87,7 @@ const _demoNodes: Node<ArchitectureNodeData>[] = [
   },
   {
     id: NODE_IDS.INVENTORY_SERVICE,
-    type: 'default',
+    type: 'architectureNode',
     position: { x: 700, y: 400 },
     data: {
       label:       'Inventory Service',
@@ -101,7 +101,7 @@ const _demoNodes: Node<ArchitectureNodeData>[] = [
   },
   {
     id: NODE_IDS.REDIS_CACHE,
-    type: 'default',
+    type: 'architectureNode',
     position: { x: 400, y: 400 },
     data: {
       label:       'Redis Cache',
@@ -115,7 +115,7 @@ const _demoNodes: Node<ArchitectureNodeData>[] = [
   },
   {
     id: NODE_IDS.POSTGRES_DB,
-    type: 'default',
+    type: 'architectureNode',
     position: { x: 250, y: 580 },
     data: {
       label:       'PostgreSQL Database',
@@ -129,7 +129,7 @@ const _demoNodes: Node<ArchitectureNodeData>[] = [
   },
   {
     id: NODE_IDS.NOTIFICATION_SERVICE,
-    type: 'default',
+    type: 'architectureNode',
     position: { x: 700, y: 200 },
     data: {
       label:       'Notification Service',
