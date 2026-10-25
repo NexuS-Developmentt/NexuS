@@ -11,9 +11,11 @@
  *  - Node and edge deletion with connected edge cleanup
  *  - Connection validation blocking self-links & duplicate source-target pairs
  *  - Non-blocking notification messages for blocked connections
+ *  - Transient simulation status overlay (highlights bottlenecks without overwriting user data)
+ *  - Automatically clears simulation highlights when graph is mutated or reset
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useMemo } from 'react';
 import {
   useNodesState,
   useEdgesState,
@@ -39,6 +41,7 @@ import {
 
 export interface UseArchitectureGraphReturn {
   nodes: Node<ArchitectureNodeData>[];
+  rawNodes: Node<ArchitectureNodeData>[];
   edges: Edge<ArchitectureEdgeData>[];
   onNodesChange: OnNodesChange<Node<ArchitectureNodeData>>;
   onEdgesChange: OnEdgesChange<Edge<ArchitectureEdgeData>>;
@@ -71,6 +74,13 @@ export interface UseArchitectureGraphReturn {
   /** Non-blocking feedback notification (e.g. for blocked connections) */
   notification: string | null;
   clearNotification: () => void;
+
+  /** Simulation status highlights */
+  simulationHighlights: Record<string, 'normal' | 'warning' | 'critical'> | null;
+  setSimulationHighlights: (
+    highlights: Record<string, 'normal' | 'warning' | 'critical'> | null,
+  ) => void;
+  clearSimulationHighlights: () => void;
 }
 
 export function useArchitectureGraph(): UseArchitectureGraphReturn {
@@ -83,6 +93,13 @@ export function useArchitectureGraph(): UseArchitectureGraphReturn {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
 
   const [notification, setNotification] = useState<string | null>(null);
+  const [simulationHighlights, setSimulationHighlights] = useState<
+    Record<string, 'normal' | 'warning' | 'critical'> | null
+  >(null);
+
+  const clearSimulationHighlights = useCallback(() => {
+    setSimulationHighlights(null);
+  }, []);
 
   const clearNotification = useCallback(() => {
     setNotification(null);
@@ -104,6 +121,7 @@ export function useArchitectureGraph(): UseArchitectureGraphReturn {
   // ── Connection Handler ────────────────────────────────────────────────────────
   const onConnect = useCallback<OnConnect>(
     (connection: Connection) => {
+      clearSimulationHighlights();
       const check = validateConnection(
         { source: connection.source, target: connection.target },
         edges,
@@ -131,11 +149,10 @@ export function useArchitectureGraph(): UseArchitectureGraphReturn {
       };
 
       setEdges((eds) => [...eds, newEdge]);
-      // Select the newly created edge
       setSelectedEdgeId(newEdgeId);
       setSelectedNodeId(null);
     },
-    [edges, setEdges, showNotification],
+    [edges, setEdges, showNotification, clearSimulationHighlights],
   );
 
   // ── Reset ────────────────────────────────────────────────────────────────────
@@ -145,11 +162,13 @@ export function useArchitectureGraph(): UseArchitectureGraphReturn {
     setEdges(freshEdges);
     clearSelection();
     setNotification(null);
-  }, [setNodes, setEdges, clearSelection]);
+    clearSimulationHighlights();
+  }, [setNodes, setEdges, clearSelection, clearSimulationHighlights]);
 
   // ── Add Node ─────────────────────────────────────────────────────────────────
   const addNode = useCallback(
     (kind: ArchitectureNodeKind): string => {
+      clearSimulationHighlights();
       const id = `node-${kind}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       const config = getDefaultNodeConfig(kind);
       const position = calculateNewNodePosition(nodes);
@@ -174,12 +193,13 @@ export function useArchitectureGraph(): UseArchitectureGraphReturn {
       setSelectedEdgeId(null);
       return id;
     },
-    [nodes, setNodes],
+    [nodes, setNodes, clearSimulationHighlights],
   );
 
   // ── Update Node Data ─────────────────────────────────────────────────────────
   const updateNodeData = useCallback(
     (nodeId: string, partialData: Partial<ArchitectureNodeData>) => {
+      clearSimulationHighlights();
       setNodes((prevNodes) =>
         prevNodes.map((n) => {
           if (n.id !== nodeId) return n;
@@ -193,12 +213,13 @@ export function useArchitectureGraph(): UseArchitectureGraphReturn {
         }),
       );
     },
-    [setNodes],
+    [setNodes, clearSimulationHighlights],
   );
 
   // ── Delete Node ──────────────────────────────────────────────────────────────
   const deleteNode = useCallback(
     (nodeId: string) => {
+      clearSimulationHighlights();
       // 1. Remove the node
       setNodes((prevNodes) => prevNodes.filter((n) => n.id !== nodeId));
 
@@ -217,12 +238,13 @@ export function useArchitectureGraph(): UseArchitectureGraphReturn {
         return wasConnected ? null : currEdgeId;
       });
     },
-    [edges, setNodes, setEdges],
+    [edges, setNodes, setEdges, clearSimulationHighlights],
   );
 
   // ── Update Edge Data ─────────────────────────────────────────────────────────
   const updateEdgeData = useCallback(
     (edgeId: string, partialData: Partial<ArchitectureEdgeData>, newLabel?: string) => {
+      clearSimulationHighlights();
       setEdges((prevEdges) =>
         prevEdges.map((e) => {
           if (e.id !== edgeId) return e;
@@ -242,16 +264,17 @@ export function useArchitectureGraph(): UseArchitectureGraphReturn {
         }),
       );
     },
-    [setEdges],
+    [setEdges, clearSimulationHighlights],
   );
 
   // ── Delete Edge ──────────────────────────────────────────────────────────────
   const deleteEdge = useCallback(
     (edgeId: string) => {
+      clearSimulationHighlights();
       setEdges((prevEdges) => prevEdges.filter((e) => e.id !== edgeId));
       setSelectedEdgeId((curr) => (curr === edgeId ? null : curr));
     },
-    [setEdges],
+    [setEdges, clearSimulationHighlights],
   );
 
   // ── Selection Handlers ───────────────────────────────────────────────────────
@@ -272,8 +295,25 @@ export function useArchitectureGraph(): UseArchitectureGraphReturn {
     clearSelection();
   }, [clearSelection]);
 
+  // ── Display Nodes with transient simulation overlay ──────────────────────────
+  const displayNodes = useMemo(() => {
+    if (!simulationHighlights) return nodes;
+    return nodes.map((node) => {
+      const simStatus = simulationHighlights[node.id];
+      if (!simStatus) return node;
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          simulationStatus: simStatus,
+        },
+      };
+    });
+  }, [nodes, simulationHighlights]);
+
   return {
-    nodes,
+    nodes: displayNodes,
+    rawNodes: nodes,
     edges,
     onNodesChange,
     onEdgesChange,
@@ -293,5 +333,8 @@ export function useArchitectureGraph(): UseArchitectureGraphReturn {
     deleteEdge,
     notification,
     clearNotification,
+    simulationHighlights,
+    setSimulationHighlights,
+    clearSimulationHighlights,
   };
 }

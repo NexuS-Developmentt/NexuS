@@ -16,12 +16,17 @@ import {
   BackgroundVariant,
   type FitViewOptions,
   type OnSelectionChangeParams,
+  type Node,
+  type Edge,
+  type OnNodesChange,
+  type OnEdgesChange,
+  type OnConnect,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { AlertCircle, X, RotateCcw, LayoutGrid } from 'lucide-react';
 
+import type { ArchitectureNodeData, ArchitectureEdgeData } from '../types/architecture';
 import { ArchitectureNode } from './ArchitectureNode';
-import type { UseArchitectureGraphReturn } from '../hooks/useArchitectureGraph';
 import styles from './ArchitectureCanvas.module.css';
 
 // ── nodeTypes registered once at module scope ─────────────────────────────────
@@ -53,20 +58,17 @@ const fitViewOptions: FitViewOptions = { padding: 0.15, duration: 400 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export interface ArchitectureCanvasProps
-  extends Omit<
-    UseArchitectureGraphReturn,
-    | 'selectedNodeId'
-    | 'selectedEdgeId'
-    | 'setSelectedNodeId'
-    | 'setSelectedEdgeId'
-    | 'clearSelection'
-    | 'addNode'
-    | 'updateNodeData'
-    | 'deleteNode'
-    | 'updateEdgeData'
-    | 'deleteEdge'
-  > {
+export interface ArchitectureCanvasProps {
+  nodes: Node<ArchitectureNodeData>[];
+  edges: Edge<ArchitectureEdgeData>[];
+  onNodesChange: OnNodesChange<Node<ArchitectureNodeData>>;
+  onEdgesChange: OnEdgesChange<Edge<ArchitectureEdgeData>>;
+  onConnect: OnConnect;
+  onSelectionChange?: (params: OnSelectionChangeParams) => void;
+  onPaneClick?: () => void;
+  notification?: string | null;
+  clearNotification?: () => void;
+  resetDemo?: () => void;
   onResetDemo?: () => void;
 }
 

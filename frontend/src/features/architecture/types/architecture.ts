@@ -35,6 +35,8 @@ export interface ArchitectureNodeData extends Record<string, unknown> {
   description?: string;
   /** Current health status used for visual indicators. */
   status?: 'normal' | 'warning' | 'critical';
+  /** Transient simulation overlay status (does not overwrite user-stored status). */
+  simulationStatus?: 'normal' | 'warning' | 'critical';
 }
 
 /**

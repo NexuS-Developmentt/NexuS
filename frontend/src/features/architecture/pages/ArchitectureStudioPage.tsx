@@ -23,6 +23,7 @@ import { ArchitectureCanvas } from '../components/ArchitectureCanvas';
 import { GraphToolbar } from '../components/GraphToolbar';
 import { NodePalette } from '../components/NodePalette';
 import { PropertiesPanel } from '../components/PropertiesPanel';
+import { SimulationPanel } from '../components/SimulationPanel';
 import { useArchitectureGraph } from '../hooks/useArchitectureGraph';
 import styles from './ArchitectureStudioPage.module.css';
 
@@ -127,7 +128,7 @@ function InnerPage() {
         {/* Compact left palette for adding nodes */}
         <NodePalette onAddNode={graph.addNode} />
 
-        {/* Canvas fills all remaining horizontal space */}
+        {/* Canvas and Simulation Panel fill remaining horizontal space */}
         <div className={styles.canvasArea}>
           <ArchitectureCanvas
             nodes={graph.nodes}
@@ -141,11 +142,17 @@ function InnerPage() {
             clearNotification={graph.clearNotification}
             resetDemo={handleReset}
           />
+          <SimulationPanel
+            nodes={graph.rawNodes}
+            edges={graph.edges}
+            onSetSimulationHighlights={graph.setSimulationHighlights}
+            onClearSimulationHighlights={graph.clearSimulationHighlights}
+          />
         </div>
 
         {/* Properties panel — fixed width, scrolls independently */}
         <PropertiesPanel
-          nodes={graph.nodes}
+          nodes={graph.rawNodes}
           edges={graph.edges}
           selectedNodeId={graph.selectedNodeId}
           selectedEdgeId={graph.selectedEdgeId}

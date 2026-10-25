@@ -65,10 +65,11 @@ const STATUS_META: Record<'normal' | 'warning' | 'critical', StatusMeta> = {
 type ArchitectureNodeProps = NodeProps<Node<ArchitectureNodeData>>;
 
 function ArchitectureNodeInner({ data, selected }: ArchitectureNodeProps) {
-  const { label, kind, replicas, status = 'normal' } = data;
+  const { label, kind, replicas } = data;
+  const effectiveStatus = data.simulationStatus ?? data.status ?? 'normal';
 
   const kindMeta   = KIND_META[kind]   ?? KIND_META.service;
-  const statusMeta = STATUS_META[status] ?? STATUS_META.normal;
+  const statusMeta = STATUS_META[effectiveStatus] ?? STATUS_META.normal;
 
   const { Icon: KindIcon, label: kindLabel, className: kindClass } = kindMeta;
   const { Icon: StatusIcon, label: statusLabel, className: statusClass } = statusMeta;
