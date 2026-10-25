@@ -15,6 +15,7 @@ import {
   Background,
   BackgroundVariant,
   type FitViewOptions,
+  type OnSelectionChangeParams,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
@@ -53,7 +54,7 @@ const fitViewOptions: FitViewOptions = { padding: 0.15, duration: 400 };
 // ── Component ─────────────────────────────────────────────────────────────────
 
 interface ArchitectureCanvasProps
-  extends Omit<UseArchitectureGraphReturn, 'resetDemo'> {}
+  extends Omit<UseArchitectureGraphReturn, 'resetDemo' | 'selectedNodeId' | 'selectedEdgeId'> {}
 
 /**
  * Inner canvas — must be rendered inside a ReactFlowProvider so that
@@ -69,6 +70,8 @@ export function ArchitectureCanvas({
   onNodesChange,
   onEdgesChange,
   onConnect,
+  onSelectionChange,
+  onPaneClick,
 }: ArchitectureCanvasProps) {
   return (
     <div className={styles.canvasWrapper}>
@@ -78,6 +81,8 @@ export function ArchitectureCanvas({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onSelectionChange={(p: OnSelectionChangeParams) => onSelectionChange?.(p)}
+        onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
         defaultEdgeOptions={defaultEdgeOptions}
         fitView
@@ -86,7 +91,6 @@ export function ArchitectureCanvas({
         maxZoom={2}
         colorMode="dark"
         className={styles.flow}
-        /* Accessibility */
         aria-label="Architecture diagram canvas"
       >
         {/* Subtle dot-grid — low contrast against dark background */}

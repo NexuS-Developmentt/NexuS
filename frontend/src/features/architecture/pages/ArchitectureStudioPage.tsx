@@ -4,36 +4,31 @@
  * Top-level page for the Architecture Studio feature.
  *
  * Layout:
- *   ┌─────────────────────────────────────┐
- *   │  Header: title + demo badge         │
- *   │  Toolbar: Fit view | Reset demo     │
- *   │  Canvas (fills remaining height)    │
- *   └─────────────────────────────────────┘
+ *   ┌──────────────────────────────────────────────────────┐
+ *   │  Header: title + demo badge                          │
+ *   │  Toolbar: Fit view | Reset demo                      │
+ *   ├──────────────────────────────────────────────── ─────┤
+ *   │  Canvas (flex: 1)          │  Properties panel 300px │
+ *   └──────────────────────────────────────────────────────┘
  *
- * ReactFlowProvider wraps the canvas so that useReactFlow() calls inside
- * ArchitectureCanvas resolve correctly.
- *
- * The fitView bridge: ArchitectureCanvas exposes nothing via refs. Instead,
- * the page renders an InnerPage child that lives *inside* the ReactFlowProvider
- * and can call useReactFlow() to obtain fitView, which it passes to the toolbar.
+ * ReactFlowProvider wraps the body so useReactFlow() works inside
+ * ArchitectureCanvas. InnerPage lives inside the provider so it can call
+ * useReactFlow() directly for fitView.
  */
 
 import { useCallback } from 'react';
 import { ReactFlowProvider, useReactFlow, type FitViewOptions } from '@xyflow/react';
 
-import { useArchitectureGraph } from '../hooks/useArchitectureGraph';
-import { ArchitectureCanvas }   from '../components/ArchitectureCanvas';
-import { GraphToolbar }         from '../components/GraphToolbar';
+import { useArchitectureGraph }  from '../hooks/useArchitectureGraph';
+import { ArchitectureCanvas }    from '../components/ArchitectureCanvas';
+import { GraphToolbar }          from '../components/GraphToolbar';
+import { PropertiesPanel }       from '../components/PropertiesPanel';
 
 import styles from './ArchitectureStudioPage.module.css';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shared fit-view options (consistent with canvas defaults)
-// ─────────────────────────────────────────────────────────────────────────────
 const FIT_VIEW_OPTS: FitViewOptions = { padding: 0.15, duration: 400 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Inner page — rendered inside ReactFlowProvider so useReactFlow() works
 // ─────────────────────────────────────────────────────────────────────────────
 function InnerPage() {
   const { fitView } = useReactFlow();
@@ -46,7 +41,6 @@ function InnerPage() {
 
   const handleReset = useCallback(() => {
     graph.resetDemo();
-    // Give React one tick to apply the new node positions, then fit view
     setTimeout(() => fitView(FIT_VIEW_OPTS), 50);
   }, [graph, fitView]);
 
@@ -58,7 +52,10 @@ function InnerPage() {
           <h1 className={styles.title}>Architecture Studio</h1>
           <span className={styles.projectName}>NexuS</span>
         </div>
-        <span className={styles.demoBadge} title="This graph is hand-authored demo data, not discovered from the repository">
+        <span
+          className={styles.demoBadge}
+          title="This graph is hand-authored demo data, not discovered from the repository"
+        >
           Demo data · local only
         </span>
       </header>
@@ -68,20 +65,33 @@ function InnerPage() {
         <GraphToolbar onFitView={handleFitView} onReset={handleReset} />
       </div>
 
-      {/* ── Canvas ── */}
-      <ArchitectureCanvas
-        nodes={graph.nodes}
-        edges={graph.edges}
-        onNodesChange={graph.onNodesChange}
-        onEdgesChange={graph.onEdgesChange}
-        onConnect={graph.onConnect}
-      />
+      {/* ── Body: canvas + properties panel ── */}
+      <div className={styles.body}>
+        {/* Canvas fills all remaining horizontal space */}
+        <div className={styles.canvasArea}>
+          <ArchitectureCanvas
+            nodes={graph.nodes}
+            edges={graph.edges}
+            onNodesChange={graph.onNodesChange}
+            onEdgesChange={graph.onEdgesChange}
+            onConnect={graph.onConnect}
+            onSelectionChange={graph.onSelectionChange}
+            onPaneClick={graph.onPaneClick}
+          />
+        </div>
+
+        {/* Properties panel — fixed width, scrolls independently */}
+        <PropertiesPanel
+          nodes={graph.nodes}
+          edges={graph.edges}
+          selectedNodeId={graph.selectedNodeId}
+          selectedEdgeId={graph.selectedEdgeId}
+        />
+      </div>
     </div>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Public export — wraps InnerPage in ReactFlowProvider
 // ─────────────────────────────────────────────────────────────────────────────
 export function ArchitectureStudioPage() {
   return (
