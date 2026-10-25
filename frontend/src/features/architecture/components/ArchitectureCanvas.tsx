@@ -18,6 +18,7 @@ import {
   type OnSelectionChangeParams,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { AlertCircle, X, RotateCcw, LayoutGrid } from 'lucide-react';
 
 import { ArchitectureNode } from './ArchitectureNode';
 import type { UseArchitectureGraphReturn } from '../hooks/useArchitectureGraph';
@@ -33,8 +34,7 @@ const defaultEdgeOptions = {
   type: 'smoothstep',
   markerEnd: { type: 'arrow' as const },
   style: { strokeWidth: 1.5, stroke: '#3a4050' },
-  // `label` is supplied per-edge in demoArchitecture.ts. These style props
-  // control the appearance of that label when React Flow renders it.
+  // `label` is supplied per-edge. These style props control appearance.
   labelStyle: {
     fill: '#a8b4c8',
     fontSize: 10,
@@ -53,17 +53,23 @@ const fitViewOptions: FitViewOptions = { padding: 0.15, duration: 400 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-interface ArchitectureCanvasProps
-  extends Omit<UseArchitectureGraphReturn, 'resetDemo' | 'selectedNodeId' | 'selectedEdgeId'> {}
+export interface ArchitectureCanvasProps
+  extends Omit<
+    UseArchitectureGraphReturn,
+    | 'selectedNodeId'
+    | 'selectedEdgeId'
+    | 'setSelectedNodeId'
+    | 'setSelectedEdgeId'
+    | 'clearSelection'
+    | 'addNode'
+    | 'updateNodeData'
+    | 'deleteNode'
+    | 'updateEdgeData'
+    | 'deleteEdge'
+  > {
+  onResetDemo?: () => void;
+}
 
-/**
- * Inner canvas — must be rendered inside a ReactFlowProvider so that
- * useReactFlow() has access to the store. ArchitectureStudioPage wraps this
- * in ReactFlowProvider.
- *
- * fitView is owned by the parent (InnerPage) via its own useReactFlow() call
- * and passed down as onFitView — the canvas itself does not need to call it.
- */
 export function ArchitectureCanvas({
   nodes,
   edges,
@@ -72,9 +78,56 @@ export function ArchitectureCanvas({
   onConnect,
   onSelectionChange,
   onPaneClick,
+  notification,
+  clearNotification,
+  resetDemo,
+  onResetDemo,
 }: ArchitectureCanvasProps) {
+  const handleReset = onResetDemo ?? resetDemo;
+
   return (
     <div className={styles.canvasWrapper}>
+      {/* ── Toast notification banner (non-blocking) ── */}
+      {notification && (
+        <div className={styles.toast} role="status" aria-live="assertive">
+          <AlertCircle size={15} />
+          <span>{notification}</span>
+          <button
+            type="button"
+            className={styles.toastCloseBtn}
+            onClick={clearNotification}
+            aria-label="Dismiss notification"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* ── Empty graph state overlay ── */}
+      {nodes.length === 0 && (
+        <div className={styles.emptyStateOverlay} role="region" aria-label="Empty diagram">
+          <div className={styles.emptyStateCard}>
+            <div className={styles.emptyIconWrapper}>
+              <LayoutGrid size={24} />
+            </div>
+            <h2 className={styles.emptyTitle}>Architecture graph is empty</h2>
+            <p className={styles.emptyDesc}>
+              All components have been deleted. You can add components from the palette on the
+              left, or restore the demo architecture.
+            </p>
+            <button
+              id="empty-state-reset-btn"
+              type="button"
+              className={styles.emptyResetBtn}
+              onClick={handleReset}
+            >
+              <RotateCcw size={14} />
+              Reset demo
+            </button>
+          </div>
+        </div>
+      )}
+
       <ReactFlow
         nodes={nodes}
         edges={edges}

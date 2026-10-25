@@ -6,9 +6,8 @@
   flex: 1 1 0;
   min-height: 0;       /* allow flex child to shrink below content height */
   position: relative;
-  border-radius: 8px;
   overflow: hidden;
-  border: 1px solid #252830;
+  background: #0d0f16;
 }
 
 /* Override React Flow root background to match our dark theme */
@@ -29,4 +28,134 @@
   border: 1px solid #2e3340 !important;
   border-radius: 8px !important;
   overflow: hidden !important;
+}
+
+/* ── Toast Notification Banner ─────────────────────────────────────────────── */
+.toast {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(30, 24, 16, 0.95);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 12px rgba(245, 158, 11, 0.15);
+  color: #fcd34d;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  z-index: 50;
+  pointer-events: auto;
+  animation: slideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.toastCloseBtn {
+  background: transparent;
+  border: none;
+  color: #fbbf24;
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  opacity: 0.75;
+  transition: opacity 0.15s ease;
+}
+
+.toastCloseBtn:hover {
+  opacity: 1;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* ── Empty Graph State Overlay ─────────────────────────────────────────────── */
+.emptyStateOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 17, 23, 0.85);
+  backdrop-filter: blur(2px);
+  z-index: 40;
+  padding: 20px;
+  text-align: center;
+  pointer-events: auto;
+}
+
+.emptyStateCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 380px;
+  background: #141722;
+  border: 1px solid #23283a;
+  border-radius: 12px;
+  padding: 32px 24px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+}
+
+.emptyIconWrapper {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(61, 125, 212, 0.1);
+  border: 1px solid rgba(61, 125, 212, 0.25);
+  color: #3d7dd4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.emptyTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #f1f3f9;
+  margin: 0 0 8px;
+}
+
+.emptyDesc {
+  font-size: 13px;
+  color: #8c96ac;
+  line-height: 1.5;
+  margin: 0 0 20px;
+}
+
+.emptyResetBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  background: #2563eb;
+  color: #ffffff;
+  border: 1px solid #3b82f6;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.emptyResetBtn:hover {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+}
+
+.emptyResetBtn:active {
+  transform: translateY(0);
 }

@@ -1,15 +1,16 @@
 /**
  * useArchitectureGraph
  *
- * Single source of truth for the canvas node/edge state, including selection.
+ * Single source of truth for the canvas node/edge state, selection, and editing.
  *
- * Selection rules:
- *  - Selecting a node clears any edge selection.
- *  - Selecting an edge clears any node selection.
- *  - Clicking the empty canvas pane clears all selection.
- *  - React Flow's built-in selection state (node.selected) drives visual
- *    highlighting; we mirror the selected IDs here so the properties panel
- *    can read them without traversing the node/edge arrays itself.
+ * Capabilities:
+ *  - Interactive nodes and edges state
+ *  - Selection mutual exclusivity (node vs edge)
+ *  - Adding new nodes with non-stacking positions
+ *  - Real-time node & edge data updating
+ *  - Node and edge deletion with connected edge cleanup
+ *  - Connection validation blocking self-links & duplicate source-target pairs
+ *  - Non-blocking notification messages for blocked connections
  */
 
 import { useCallback, useState } from 'react';
@@ -20,12 +21,21 @@ import {
   type OnEdgesChange,
   type OnConnect,
   type OnSelectionChangeParams,
-  addEdge,
+  type Connection,
 } from '@xyflow/react';
 import type { Node, Edge } from '@xyflow/react';
 
 import { getDemoArchitecture } from '../data/demoArchitecture';
-import type { ArchitectureNodeData, ArchitectureEdgeData } from '../types/architecture';
+import type {
+  ArchitectureNodeData,
+  ArchitectureEdgeData,
+  ArchitectureNodeKind,
+} from '../types/architecture';
+import {
+  validateConnection,
+  getDefaultNodeConfig,
+  calculateNewNodePosition,
+} from '../utils/graphValidation';
 
 export interface UseArchitectureGraphReturn {
   nodes: Node<ArchitectureNodeData>[];
@@ -34,14 +44,33 @@ export interface UseArchitectureGraphReturn {
   onEdgesChange: OnEdgesChange<Edge<ArchitectureEdgeData>>;
   onConnect: OnConnect;
   resetDemo: () => void;
+
   /** ID of the currently selected node, or null. */
   selectedNodeId: string | null;
   /** ID of the currently selected edge, or null. */
   selectedEdgeId: string | null;
-  /** Pass to ReactFlow's onSelectionChange prop. */
+
+  /** Selection handlers */
   onSelectionChange: (params: OnSelectionChangeParams) => void;
-  /** Pass to ReactFlow's onPaneClick prop to clear selection. */
   onPaneClick: () => void;
+  clearSelection: () => void;
+  setSelectedNodeId: (id: string | null) => void;
+  setSelectedEdgeId: (id: string | null) => void;
+
+  /** Graph mutations */
+  addNode: (kind: ArchitectureNodeKind) => string;
+  updateNodeData: (nodeId: string, partialData: Partial<ArchitectureNodeData>) => void;
+  deleteNode: (nodeId: string) => void;
+  updateEdgeData: (
+    edgeId: string,
+    partialData: Partial<ArchitectureEdgeData>,
+    newLabel?: string,
+  ) => void;
+  deleteEdge: (edgeId: string) => void;
+
+  /** Non-blocking feedback notification (e.g. for blocked connections) */
+  notification: string | null;
+  clearNotification: () => void;
 }
 
 export function useArchitectureGraph(): UseArchitectureGraphReturn {
@@ -53,45 +82,195 @@ export function useArchitectureGraph(): UseArchitectureGraphReturn {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
 
+  const [notification, setNotification] = useState<string | null>(null);
+
+  const clearNotification = useCallback(() => {
+    setNotification(null);
+  }, []);
+
+  const showNotification = useCallback((message: string) => {
+    setNotification(message);
+    // Auto-dismiss after 4 seconds
+    setTimeout(() => {
+      setNotification((curr) => (curr === message ? null : curr));
+    }, 4000);
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+  }, []);
+
+  // ── Connection Handler ────────────────────────────────────────────────────────
   const onConnect = useCallback<OnConnect>(
-    (connection) => setEdges((eds) => addEdge(connection, eds)),
-    [setEdges],
+    (connection: Connection) => {
+      const check = validateConnection(
+        { source: connection.source, target: connection.target },
+        edges,
+      );
+
+      if (!check.valid) {
+        showNotification(check.reason ?? 'Cannot create connection.');
+        return;
+      }
+
+      const newEdgeId = `edge-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const newEdge: Edge<ArchitectureEdgeData> = {
+        id: newEdgeId,
+        source: connection.source!,
+        target: connection.target!,
+        sourceHandle: connection.sourceHandle,
+        targetHandle: connection.targetHandle,
+        type: 'smoothstep',
+        markerEnd: { type: 'arrow' as const },
+        data: {
+          kind: 'http',
+          label: 'HTTP',
+        },
+        label: 'HTTP',
+      };
+
+      setEdges((eds) => [...eds, newEdge]);
+      // Select the newly created edge
+      setSelectedEdgeId(newEdgeId);
+      setSelectedNodeId(null);
+    },
+    [edges, setEdges, showNotification],
   );
 
+  // ── Reset ────────────────────────────────────────────────────────────────────
   const resetDemo = useCallback(() => {
     const { nodes: freshNodes, edges: freshEdges } = getDemoArchitecture();
     setNodes(freshNodes);
     setEdges(freshEdges);
-    setSelectedNodeId(null);
-    setSelectedEdgeId(null);
-  }, [setNodes, setEdges]);
+    clearSelection();
+    setNotification(null);
+  }, [setNodes, setEdges, clearSelection]);
 
-  /**
-   * React Flow fires this whenever the set of selected nodes/edges changes.
-   * We take only the first selected item in each category and enforce mutual
-   * exclusivity: a node selection clears the edge selection and vice versa.
-   */
+  // ── Add Node ─────────────────────────────────────────────────────────────────
+  const addNode = useCallback(
+    (kind: ArchitectureNodeKind): string => {
+      const id = `node-${kind}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const config = getDefaultNodeConfig(kind);
+      const position = calculateNewNodePosition(nodes);
+
+      const newNode: Node<ArchitectureNodeData> = {
+        id,
+        type: 'architectureNode',
+        position,
+        data: {
+          label: config.label,
+          kind: config.kind,
+          replicas: config.replicas,
+          cpuCores: config.cpuCores,
+          memoryMb: config.memoryMb,
+          description: config.description,
+          status: config.status,
+        },
+      };
+
+      setNodes((currentNodes) => [...currentNodes, newNode]);
+      setSelectedNodeId(id);
+      setSelectedEdgeId(null);
+      return id;
+    },
+    [nodes, setNodes],
+  );
+
+  // ── Update Node Data ─────────────────────────────────────────────────────────
+  const updateNodeData = useCallback(
+    (nodeId: string, partialData: Partial<ArchitectureNodeData>) => {
+      setNodes((prevNodes) =>
+        prevNodes.map((n) => {
+          if (n.id !== nodeId) return n;
+          return {
+            ...n,
+            data: {
+              ...n.data,
+              ...partialData,
+            },
+          };
+        }),
+      );
+    },
+    [setNodes],
+  );
+
+  // ── Delete Node ──────────────────────────────────────────────────────────────
+  const deleteNode = useCallback(
+    (nodeId: string) => {
+      // 1. Remove the node
+      setNodes((prevNodes) => prevNodes.filter((n) => n.id !== nodeId));
+
+      // 2. Remove all connected edges
+      setEdges((prevEdges) =>
+        prevEdges.filter((e) => e.source !== nodeId && e.target !== nodeId),
+      );
+
+      // 3. Clear selection if this node or a connected edge was selected
+      setSelectedNodeId((curr) => (curr === nodeId ? null : curr));
+      setSelectedEdgeId((currEdgeId) => {
+        if (!currEdgeId) return null;
+        const wasConnected = edges.some(
+          (e) => e.id === currEdgeId && (e.source === nodeId || e.target === nodeId),
+        );
+        return wasConnected ? null : currEdgeId;
+      });
+    },
+    [edges, setNodes, setEdges],
+  );
+
+  // ── Update Edge Data ─────────────────────────────────────────────────────────
+  const updateEdgeData = useCallback(
+    (edgeId: string, partialData: Partial<ArchitectureEdgeData>, newLabel?: string) => {
+      setEdges((prevEdges) =>
+        prevEdges.map((e) => {
+          if (e.id !== edgeId) return e;
+          const updatedLabel: string | undefined =
+            newLabel !== undefined
+              ? newLabel
+              : (partialData.label ?? (typeof e.label === 'string' ? e.label : undefined));
+          return {
+            ...e,
+            label: updatedLabel,
+            data: {
+              ...e.data,
+              ...partialData,
+              label: updatedLabel,
+            },
+          };
+        }),
+      );
+    },
+    [setEdges],
+  );
+
+  // ── Delete Edge ──────────────────────────────────────────────────────────────
+  const deleteEdge = useCallback(
+    (edgeId: string) => {
+      setEdges((prevEdges) => prevEdges.filter((e) => e.id !== edgeId));
+      setSelectedEdgeId((curr) => (curr === edgeId ? null : curr));
+    },
+    [setEdges],
+  );
+
+  // ── Selection Handlers ───────────────────────────────────────────────────────
   const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
     const firstNode = params.nodes[0] ?? null;
     const firstEdge = params.edges[0] ?? null;
 
     if (firstNode) {
-      // Node clicked — clear edge selection
       setSelectedNodeId(firstNode.id);
       setSelectedEdgeId(null);
     } else if (firstEdge) {
-      // Edge clicked — clear node selection
       setSelectedEdgeId(firstEdge.id);
       setSelectedNodeId(null);
     }
-    // If both are empty React Flow is signalling a deselect — handled by onPaneClick
   }, []);
 
-  /** Clicking the canvas pane clears all selection. */
   const onPaneClick = useCallback(() => {
-    setSelectedNodeId(null);
-    setSelectedEdgeId(null);
-  }, []);
+    clearSelection();
+  }, [clearSelection]);
 
   return {
     nodes,
@@ -104,5 +283,15 @@ export function useArchitectureGraph(): UseArchitectureGraphReturn {
     selectedEdgeId,
     onSelectionChange,
     onPaneClick,
+    clearSelection,
+    setSelectedNodeId,
+    setSelectedEdgeId,
+    addNode,
+    updateNodeData,
+    deleteNode,
+    updateEdgeData,
+    deleteEdge,
+    notification,
+    clearNotification,
   };
 }

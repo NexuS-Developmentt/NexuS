@@ -1,0 +1,99 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   NodePalette.module.css
+   Compact left-hand palette for adding nodes to the canvas.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.palette {
+  width: 120px;
+  min-width: 120px;
+  max-width: 120px;
+  display: flex;
+  flex-direction: column;
+  background: #0f1117;
+  border-right: 1px solid #1e2130;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.header {
+  padding: 10px 12px;
+  border-bottom: 1px solid #1e2130;
+}
+
+.title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #4a5268;
+}
+
+.buttonList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 8px;
+  overflow-y: auto;
+}
+
+.btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 9px 6px;
+  border-radius: 6px;
+  background: #141722;
+  border: 1px solid #202434;
+  color: #c4cce0;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.btn:hover {
+  background: #1b2030;
+  border-color: #333a52;
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.btn:active {
+  transform: translateY(0);
+  background: #131622;
+}
+
+.btnIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Accent colors per kind */
+.btn-gateway .btnIcon { color: #3d7dd4; }
+.btn-service .btnIcon { color: #2e9e66; }
+.btn-database .btnIcon { color: #7c53c8; }
+.btn-cache .btnIcon { color: #c9962a; }
+.btn-queue .btnIcon { color: #c96230; }
+
+.btn-gateway:hover { border-color: rgba(61, 125, 212, 0.4); }
+.btn-service:hover { border-color: rgba(46, 158, 102, 0.4); }
+.btn-database:hover { border-color: rgba(124, 83, 200, 0.4); }
+.btn-cache:hover { border-color: rgba(201, 150, 42, 0.4); }
+.btn-queue:hover { border-color: rgba(201, 98, 48, 0.4); }
+
+.btnLabel {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.addHint {
+  font-size: 9px;
+  color: #4a5470;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
