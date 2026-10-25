@@ -32,17 +32,20 @@ const defaultEdgeOptions = {
   type: 'smoothstep',
   markerEnd: { type: 'arrow' as const },
   style: { strokeWidth: 1.5, stroke: '#3a4050' },
+  // `label` is supplied per-edge in demoArchitecture.ts. These style props
+  // control the appearance of that label when React Flow renders it.
   labelStyle: {
-    fill: '#8a94a6',
+    fill: '#a8b4c8',
     fontSize: 10,
     fontFamily: 'inherit',
+    fontWeight: 500,
   },
   labelBgStyle: {
-    fill: '#1a1d24',
-    fillOpacity: 0.85,
+    fill: '#181b24',
+    fillOpacity: 1,
   },
-  labelBgPadding: [4, 6] as [number, number],
-  labelBgBorderRadius: 4,
+  labelBgPadding: [3, 7] as [number, number],
+  labelBgBorderRadius: 5,
 } as const;
 
 const fitViewOptions: FitViewOptions = { padding: 0.15, duration: 400 };

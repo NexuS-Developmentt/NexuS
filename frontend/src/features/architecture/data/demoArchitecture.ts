@@ -32,7 +32,8 @@ const _demoNodes: Node<ArchitectureNodeData>[] = [
   {
     id: NODE_IDS.API_GATEWAY,
     type: 'architectureNode',
-    position: { x: 400, y: 40 },
+    // Row 1 — entry point, horizontally centred
+    position: { x: 460, y: 60 },
     data: {
       label:       'API Gateway',
       kind:        'gateway',
@@ -46,7 +47,8 @@ const _demoNodes: Node<ArchitectureNodeData>[] = [
   {
     id: NODE_IDS.AUTH_SERVICE,
     type: 'architectureNode',
-    position: { x: 100, y: 200 },
+    // Row 2 — left column
+    position: { x: 60, y: 250 },
     data: {
       label:       'Authentication Service',
       kind:        'service',
@@ -60,7 +62,8 @@ const _demoNodes: Node<ArchitectureNodeData>[] = [
   {
     id: NODE_IDS.ORDER_SERVICE,
     type: 'architectureNode',
-    position: { x: 400, y: 200 },
+    // Row 2 — centre column
+    position: { x: 460, y: 250 },
     data: {
       label:       'Order Service',
       kind:        'service',
@@ -74,7 +77,8 @@ const _demoNodes: Node<ArchitectureNodeData>[] = [
   {
     id: NODE_IDS.PAYMENT_SERVICE,
     type: 'architectureNode',
-    position: { x: 100, y: 400 },
+    // Row 3 — left column; direct line to Postgres avoids Redis
+    position: { x: 60, y: 460 },
     data: {
       label:       'Payment Service',
       kind:        'service',
@@ -88,7 +92,8 @@ const _demoNodes: Node<ArchitectureNodeData>[] = [
   {
     id: NODE_IDS.INVENTORY_SERVICE,
     type: 'architectureNode',
-    position: { x: 700, y: 400 },
+    // Row 3 — right column
+    position: { x: 860, y: 460 },
     data: {
       label:       'Inventory Service',
       kind:        'service',
@@ -102,7 +107,8 @@ const _demoNodes: Node<ArchitectureNodeData>[] = [
   {
     id: NODE_IDS.REDIS_CACHE,
     type: 'architectureNode',
-    position: { x: 400, y: 400 },
+    // Row 3 — centre column (Order→Postgres goes right of Redis)
+    position: { x: 460, y: 460 },
     data: {
       label:       'Redis Cache',
       kind:        'cache',
@@ -116,7 +122,9 @@ const _demoNodes: Node<ArchitectureNodeData>[] = [
   {
     id: NODE_IDS.POSTGRES_DB,
     type: 'architectureNode',
-    position: { x: 250, y: 580 },
+    // Row 4 — right-centre; Order→Postgres goes straight down (clear of Redis);
+    // Payment→Postgres travels diagonally right through open space
+    position: { x: 660, y: 680 },
     data: {
       label:       'PostgreSQL Database',
       kind:        'database',
@@ -130,7 +138,8 @@ const _demoNodes: Node<ArchitectureNodeData>[] = [
   {
     id: NODE_IDS.NOTIFICATION_SERVICE,
     type: 'architectureNode',
-    position: { x: 700, y: 200 },
+    // Row 2 — right column; same row as Order so edge flows right, not up
+    position: { x: 860, y: 250 },
     data: {
       label:       'Notification Service',
       kind:        'service',
@@ -150,51 +159,61 @@ const _demoNodes: Node<ArchitectureNodeData>[] = [
 const _demoEdges: Edge<ArchitectureEdgeData>[] = [
   {
     id:     'edge-gateway-auth',
+    // `label` at the top level is what React Flow reads for the edge label pill.
+    // `data.label` is kept in sync for our domain queries and simulation.
+    label:  'Authenticate',
     source: NODE_IDS.API_GATEWAY,
     target: NODE_IDS.AUTH_SERVICE,
-    data: { label: 'Authenticate request', kind: 'http' },
+    data: { label: 'Authenticate', kind: 'http' },
   },
   {
     id:     'edge-gateway-order',
+    label:  'Route orders',
     source: NODE_IDS.API_GATEWAY,
     target: NODE_IDS.ORDER_SERVICE,
-    data: { label: 'Route order requests', kind: 'http' },
+    data: { label: 'Route orders', kind: 'http' },
   },
   {
     id:     'edge-order-payment',
+    label:  'Charge / refund',
     source: NODE_IDS.ORDER_SERVICE,
     target: NODE_IDS.PAYMENT_SERVICE,
     data: { label: 'Charge / refund', kind: 'http' },
   },
   {
     id:     'edge-order-inventory',
+    label:  'Reserve stock',
     source: NODE_IDS.ORDER_SERVICE,
     target: NODE_IDS.INVENTORY_SERVICE,
     data: { label: 'Reserve stock', kind: 'http' },
   },
   {
     id:     'edge-order-redis',
+    label:  'Cache R/W',
     source: NODE_IDS.ORDER_SERVICE,
     target: NODE_IDS.REDIS_CACHE,
-    data: { label: 'Read / write cache', kind: 'cache' },
+    data: { label: 'Cache R/W', kind: 'cache' },
   },
   {
     id:     'edge-order-postgres',
+    label:  'Persist orders',
     source: NODE_IDS.ORDER_SERVICE,
     target: NODE_IDS.POSTGRES_DB,
     data: { label: 'Persist orders', kind: 'database' },
   },
   {
     id:     'edge-payment-postgres',
+    label:  'Persist txns',
     source: NODE_IDS.PAYMENT_SERVICE,
     target: NODE_IDS.POSTGRES_DB,
-    data: { label: 'Persist transactions', kind: 'database' },
+    data: { label: 'Persist txns', kind: 'database' },
   },
   {
     id:     'edge-order-notification',
+    label:  'Order event',
     source: NODE_IDS.ORDER_SERVICE,
     target: NODE_IDS.NOTIFICATION_SERVICE,
-    data: { label: 'Emit order event', kind: 'event' },
+    data: { label: 'Order event', kind: 'event' },
   },
 ];
 
