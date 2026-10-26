@@ -1,0 +1,86 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+  white-space: nowrap;
+  text-decoration: none;
+  position: relative;
+  line-height: 1;
+}
+
+.btn:focus-visible { box-shadow: var(--focus-ring); }
+.btn:disabled      { opacity: 0.45; cursor: not-allowed; }
+
+/* ── Sizes ── */
+.sm { padding: 4px 10px;  font-size: var(--text-xs);   height: 28px; }
+.md { padding: 6px 14px;  font-size: var(--text-sm);   height: 32px; }
+.lg { padding: 9px 18px;  font-size: var(--text-base); height: 38px; }
+
+/* ── Variants ── */
+.primary {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+.primary:not(:disabled):hover {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+.secondary {
+  background: var(--color-surface-raised);
+  color: var(--color-fg);
+  border-color: var(--color-border);
+}
+.secondary:not(:disabled):hover { background: var(--color-secondary-hover); }
+
+.ghost {
+  background: transparent;
+  color: var(--color-fg-muted);
+  border-color: transparent;
+}
+.ghost:not(:disabled):hover {
+  background: var(--color-surface-raised);
+  color: var(--color-fg);
+}
+
+.destructive {
+  background: var(--color-error-subtle);
+  color: var(--color-error);
+  border-color: rgba(239, 68, 68, 0.25);
+}
+.destructive:not(:disabled):hover { background: rgba(239, 68, 68, 0.20); }
+
+/* ── Loading state ── */
+.loading { pointer-events: none; }
+
+.spinner {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.hiddenText { opacity: 0; }
+
+@keyframes spin {
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}

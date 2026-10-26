@@ -1,4 +1,1 @@
-/* Minimal styling - global theme and app shell to be added later */
-main {
-  padding: 1.5rem;
-}
+/* App.css — layout is managed by AppShell and individual page modules. */
