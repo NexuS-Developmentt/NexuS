@@ -1,0 +1,159 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   ArchitectureNode.module.css
+   Scoped styles for the custom React Flow node component.
+   Dark, restrained palette — no glow, no heavy animation.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Base node card ──────────────────────────────────────────────────────────── */
+.node {
+  min-width: 168px;
+  max-width: 200px;
+  padding: 10px 12px 8px;
+  border-radius: 8px;
+  border: 1.5px solid var(--node-border, #3a3f4b);
+  background: var(--node-bg, #1c1f27);
+  font-family: inherit;
+  font-size: 12px;
+  color: #d4d8e2;
+  cursor: default;
+  user-select: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* ── Selected outline ring ───────────────────────────────────────────────────── */
+.selected {
+  border-color: #5b8dee !important;
+  box-shadow: 0 0 0 2px rgba(91, 141, 238, 0.25);
+  outline: none;
+}
+
+/* ── Header row ──────────────────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.kindLabel {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--kind-accent, #7a8499);
+  flex: 1 1 auto;
+}
+
+/* ── Status badge ────────────────────────────────────────────────────────────── */
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.statusNormal {
+  background: rgba(52, 168, 83, 0.12);
+  color: #6ecf8e;
+  border-color: rgba(52, 168, 83, 0.25);
+}
+
+.statusWarning {
+  background: rgba(251, 188, 4, 0.12);
+  color: #f5c842;
+  border-color: rgba(251, 188, 4, 0.25);
+}
+
+.statusCritical {
+  background: rgba(234, 67, 53, 0.12);
+  color: #f07068;
+  border-color: rgba(234, 67, 53, 0.25);
+}
+
+/* ── Display label ───────────────────────────────────────────────────────────── */
+.label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e8eaf0;
+  line-height: 1.3;
+  margin-bottom: 4px;
+  word-break: break-word;
+}
+
+/* ── Replica footer ──────────────────────────────────────────────────────────── */
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.replicaPill {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--kind-accent, #7a8499);
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  padding: 0 5px;
+  letter-spacing: 0.02em;
+}
+
+.replicaText {
+  font-size: 10px;
+  color: #5a6070;
+}
+
+/* ── React Flow handles ──────────────────────────────────────────────────────── */
+.handle {
+  width: 8px !important;
+  height: 8px !important;
+  border: 2px solid #3a3f4b !important;
+  background: #1c1f27 !important;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.handle:hover {
+  border-color: #5b8dee !important;
+  background: #5b8dee !important;
+}
+
+/* ── Per-kind accent colours ─────────────────────────────────────────────────── */
+/*
+   Only border-left accent — no background flood fill.
+   Each kind gets a distinctive left stripe.
+*/
+
+.kindGateway {
+  --kind-accent: #7ab4f5;
+  border-left: 3px solid #3d7dd4;
+}
+
+.kindService {
+  --kind-accent: #85d4a8;
+  border-left: 3px solid #2e9e66;
+}
+
+.kindDatabase {
+  --kind-accent: #c3a4f5;
+  border-left: 3px solid #7c53c8;
+}
+
+.kindCache {
+  --kind-accent: #f5c87a;
+  border-left: 3px solid #c9962a;
+}
+
+.kindQueue {
+  --kind-accent: #f5a07a;
+  border-left: 3px solid #c96230;
+}
