@@ -8,6 +8,7 @@
  * changed" warning and prevents unnecessary node re-mounts.
  */
 
+import { useMemo } from 'react';
 import {
   ReactFlow,
   Controls,
@@ -25,7 +26,11 @@ import {
 import '@xyflow/react/dist/style.css';
 import { AlertCircle, X, RotateCcw, LayoutGrid } from 'lucide-react';
 
-import type { ArchitectureNodeData, ArchitectureEdgeData } from '../types/architecture';
+import type {
+  ArchitectureNodeData,
+  ArchitectureEdgeData,
+  ArchitectureEdgeKind,
+} from '../types/architecture';
 import { ArchitectureNode } from './ArchitectureNode';
 import styles from './ArchitectureCanvas.module.css';
 
@@ -34,21 +39,45 @@ const nodeTypes = {
   architectureNode: ArchitectureNode,
 } as const;
 
+// ── Kind-specific edge styling (visually distinct dash patterns, not colour only) ──
+function getEdgeStyleForKind(kind?: ArchitectureEdgeKind): {
+  stroke: string;
+  strokeWidth: number;
+  strokeDasharray?: string;
+} {
+  switch (kind) {
+    case 'database':
+      // Distinct medium-dashed line for persistent database traffic
+      return { stroke: '#a87ffb', strokeWidth: 2, strokeDasharray: '6 4' };
+    case 'cache':
+      // Distinct fine-dotted line for low-latency memory cache
+      return { stroke: '#f5c842', strokeWidth: 2, strokeDasharray: '2 3' };
+    case 'event':
+      // Distinct long-dashed line for asynchronous event streams
+      return { stroke: '#ff8a50', strokeWidth: 1.5, strokeDasharray: '10 5' };
+    case 'dependency':
+      // Distinct dash-dot pattern for static service dependencies
+      return { stroke: '#6ecf8e', strokeWidth: 1.5, strokeDasharray: '8 3 2 3' };
+    case 'http':
+    default:
+      // Solid line for synchronous HTTP / RPC requests
+      return { stroke: '#5b8dee', strokeWidth: 1.5, strokeDasharray: undefined };
+  }
+}
+
 // ── Default edge options ──────────────────────────────────────────────────────
 const defaultEdgeOptions = {
   type: 'smoothstep',
   markerEnd: { type: 'arrow' as const },
-  style: { strokeWidth: 1.5, stroke: '#3a4050' },
-  // `label` is supplied per-edge. These style props control appearance.
   labelStyle: {
-    fill: '#a8b4c8',
+    fill: '#e2e8f0',
     fontSize: 10,
     fontFamily: 'inherit',
-    fontWeight: 500,
+    fontWeight: 600,
   },
   labelBgStyle: {
-    fill: '#181b24',
-    fillOpacity: 1,
+    fill: '#141720',
+    fillOpacity: 0.95,
   },
   labelBgPadding: [3, 7] as [number, number],
   labelBgBorderRadius: 5,
@@ -86,6 +115,20 @@ export function ArchitectureCanvas({
   onResetDemo,
 }: ArchitectureCanvasProps) {
   const handleReset = onResetDemo ?? resetDemo;
+
+  const styledEdges = useMemo(() => {
+    return edges.map((e) => {
+      const edgeKind = e.data?.kind ?? 'http';
+      const kindStyle = getEdgeStyleForKind(edgeKind);
+      return {
+        ...e,
+        style: {
+          ...kindStyle,
+          ...e.style,
+        },
+      };
+    });
+  }, [edges]);
 
   return (
     <div className={styles.canvasWrapper}>
@@ -132,7 +175,7 @@ export function ArchitectureCanvas({
 
       <ReactFlow
         nodes={nodes}
-        edges={edges}
+        edges={styledEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}

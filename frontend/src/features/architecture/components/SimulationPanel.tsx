@@ -45,6 +45,7 @@ interface SimulationPanelProps {
   edges: Edge<ArchitectureEdgeData>[];
   onSetSimulationHighlights: (
     highlights: Record<string, 'normal' | 'warning' | 'critical'> | null,
+    utilisations?: Record<string, number> | null,
   ) => void;
   onClearSimulationHighlights: () => void;
 }
@@ -129,11 +130,10 @@ export function SimulationPanel({
         }
       });
 
-      if (Object.keys(highlights).length > 0) {
-        onSetSimulationHighlights(highlights);
-      } else {
-        onClearSimulationHighlights();
-      }
+      onSetSimulationHighlights(
+        Object.keys(highlights).length > 0 ? highlights : null,
+        simResult.nodeUtilisation ?? null,
+      );
     } catch (err) {
       if (err instanceof SimulationValidationError) {
         if (err.field === 'requestsPerMinute') {

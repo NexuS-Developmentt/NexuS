@@ -104,13 +104,29 @@ function ArchitectureNodeInner({ data, selected }: ArchitectureNodeProps) {
       {/* ── Display label ── */}
       <div className={styles.label}>{label}</div>
 
-      {/* ── Footer: replicas pill ── */}
-      {replicas !== undefined && (
+      {/* ── Footer: replicas pill + simulated utilisation ── */}
+      {(replicas !== undefined || data.simulationUtilisation !== undefined) && (
         <div className={styles.footer}>
-          <span className={styles.replicaPill}>
-            {replicas}×
-          </span>
-          <span className={styles.replicaText}>replica{replicas !== 1 ? 's' : ''}</span>
+          {replicas !== undefined && (
+            <div className={styles.replicaGroup}>
+              <span className={styles.replicaPill}>
+                {replicas}×
+              </span>
+              <span className={styles.replicaText}>replica{replicas !== 1 ? 's' : ''}</span>
+            </div>
+          )}
+
+          {data.simulationUtilisation !== undefined && (
+            <span
+              className={[
+                styles.utilPill,
+                data.simulationUtilisation >= 0.75 ? styles.utilHigh : styles.utilNormal,
+              ].join(' ')}
+              title={`Simulated CPU utilisation: ${Math.round(data.simulationUtilisation * 100)}%`}
+            >
+              {Math.round(data.simulationUtilisation * 100)}%
+            </span>
+          )}
         </div>
       )}
 
