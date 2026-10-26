@@ -1,10 +1,35 @@
-* {
+@import './styles/tokens.css';
+
+/* ── Box-sizing reset — does NOT target React Flow internals ── */
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
+/* ── Base body ── */
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  background-color: var(--color-bg);
+  color: var(--color-fg);
 }
+
+/* ── Keyboard focus ring ── */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+/* ── Thin scrollbars ── */
+::-webkit-scrollbar        { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: var(--color-border); border-radius: var(--radius-full); }
+::-webkit-scrollbar-thumb:hover { background: var(--color-surface-raised); }
+
+/* ── Remove legacy App.css padding; AppShell manages layout ── */
+main { padding: 0; }
