@@ -1,14 +1,15 @@
 # Architecture Studio (`features/architecture`)
 
-The **Architecture Studio** is an interactive, visual system modeling and heuristic capacity simulation workspace for the NexuS platform. It enables engineers to inspect, author, modify, and stress-test microservice topologies using directed graph diagrams.
+The **Architecture Studio** is an interactive, visual system modeling and heuristic capacity simulation workspace for the NexuS platform. It enables engineers to inspect, author, modify, export, import, and stress-test microservice topologies using directed graph diagrams.
 
 ---
 
 ## 1. Purpose
 
-- **Interactive Topology Visualization**: Render distributed architecture components (gateways, services, databases, caches, queues) and network connections with clear protocol indicators and health statuses.
+- **Interactive Topology Visualization**: Render distributed architecture components (gateways, services, databases, caches, queues) and network connections with clear protocol indicators, distinct line styles (dash patterns), and health statuses.
 - **Visual Graph Editing**: Create, reposition, configure, and connect nodes with handle-to-handle drag connections. Enforces constraints (e.g. self-link and duplicate-connection prevention).
-- **Heuristic Capacity Simulation**: Deterministically estimate end-to-end request latency, CPU utilisation, sustained throughput, and potential bottlenecks under normal, cache-eviction, service-outage, and scaled-capacity scenarios.
+- **Import / Export**: Export architecture diagrams to `nexus-architecture.json` and import diagrams with comprehensive schema and constraint validation.
+- **Heuristic Capacity Simulation**: Deterministically estimate end-to-end request latency, CPU utilisation, sustained throughput, per-node utilisation, and potential bottlenecks under normal, cache-eviction, service-outage, and scaled-capacity scenarios.
 
 ---
 
@@ -17,13 +18,13 @@ The **Architecture Studio** is an interactive, visual system modeling and heuris
 ```
 frontend/src/features/architecture/
 ├── components/
-│   ├── ArchitectureCanvas.tsx          # React Flow diagram viewport with grid, minimap, controls & empty state
+│   ├── ArchitectureCanvas.tsx          # React Flow diagram viewport with grid, minimap, controls, empty state & kind-specific edge styling
 │   ├── ArchitectureCanvas.module.css
-│   ├── ArchitectureNode.tsx            # Custom React Flow node component (handles gateway, service, database, cache, queue)
+│   ├── ArchitectureNode.tsx            # Custom React Flow node component with kind badge, status badge, replica pill & simulated utilisation %
 │   ├── ArchitectureNode.module.css
 │   ├── EmptySelectionPanel.tsx         # Placeholder displayed in properties sidebar when nothing is selected
 │   ├── EmptySelectionPanel.module.css
-│   ├── GraphToolbar.tsx                # Action toolbar with "Fit view" and "Reset demo" buttons
+│   ├── GraphToolbar.tsx                # Action toolbar with Fit view, Export JSON, Import JSON, and Reset demo buttons
 │   ├── GraphToolbar.module.css
 │   ├── NodePalette.tsx                 # Compact left palette for adding components to the canvas
 │   ├── NodePalette.module.css
@@ -43,6 +44,7 @@ frontend/src/features/architecture/
 ├── types/
 │   └── architecture.ts                 # Domain TypeScript interfaces (nodes, edges, simulations)
 ├── utils/
+│   ├── graphSerialization.ts           # Pure functions for exporting, importing, and validating architecture JSON
 │   └── graphValidation.ts              # Pure validators for node fields, connections, and non-stacking placement
 └── README.md                           # Feature module documentation (this file)
 ```
@@ -63,6 +65,7 @@ All core domain types are exported from `types/architecture.ts`:
   - `description` (optional string)
   - `status` (`'normal' | 'warning' | 'critical'`)
   - `simulationStatus` (transient visual status overlay during simulation)
+  - `simulationUtilisation` (transient visual CPU utilisation ratio for node text pill)
 - **`ArchitectureEdgeKind`**: `'http' | 'database' | 'cache' | 'event' | 'dependency'`
 - **`ArchitectureEdgeData`**:
   - `label` (optional string displayed along connection)
@@ -72,13 +75,14 @@ All core domain types are exported from `types/architecture.ts`:
   - `scenario` (`'normal' | 'remove-cache' | 'service-failure' | 'scale-service'`)
   - `targetNodeId` (string, required for `'service-failure'` and `'scale-service'`)
 - **`SimulationResult`**:
-  - `estimatedLatencyMs` (number)
-  - `estimatedCpuPercent` (number, 0–100)
-  - `estimatedThroughputRpm` (number)
-  - `bottleneckNodeIds` (string[])
-  - `explanation` (prose summary)
-  - `recommendations` (2 to 4 actionable suggestions)
+  - `estimatedLatencyMs` (number, end-to-end critical path latency)
+  - `estimatedCpuPercent` (number, 0–100 average CPU utilisation across active nodes)
+  - `estimatedThroughputRpm` (number, sustained requests per minute)
+  - `bottleneckNodeIds` (string[], nodes with utilisation ≥ 75%)
+  - `explanation` (prose summary accurately attributing throughput limits)
+  - `recommendations` (2 to 4 actionable suggestions naming real nodes and computed numbers)
   - `isMock: true`
+  - `nodeUtilisation` (optional map of per-node utilisation ratio, e.g. `{ [nodeId]: 0.75 }`)
 
 ---
 
@@ -92,13 +96,13 @@ Capacity per node represents sustainable requests per minute (RPM) per assigned 
 - **Cache**: 25,000 RPM/core (in-memory $O(1)$ key-value lookups)
 - **Service**: 4,000 RPM/core (domain business logic, JSON serialization, ORM overhead)
 - **Queue**: 12,000 RPM/core (append-only disk/memory streaming)
-- **Database**: 2,500 RPM/core (disk I/O, ACID transactions, relational joins)
+- **Database**: 2,000 RPM/core (disk I/O, ACID transactions, relational joins; rebalanced from 2,500)
 
 ### Fallback Defaults
 If a node is missing replicas or CPU cores:
 - Gateway: 2 replicas, 1 core
 - Service: 2 replicas, 1 core
-- Database: 1 replica, 4 cores
+- Database: 1 replica, 2 cores
 - Cache: 1 replica, 1 core
 - Queue: 2 replicas, 1 core
 
@@ -109,48 +113,53 @@ If a node is missing replicas or CPU cores:
   Capped at $10\times$ baseline to prevent infinite queuing divergence.
 - End-to-end latency is the sum along the slowest critical path (evaluated via cycle-safe recursive path discovery).
 
-### Scenario Behaviors
-- **`normal`**: Standard traffic propagation from entry nodes (nodes with 0 incoming edges).
-- **`remove-cache`**: In-memory cache is marked absent. Cache absorption ($85\%$ hit ratio) is bypassed, routing $100\%$ of read traffic directly to downstream databases.
-- **`service-failure`**: The specified `targetNodeId` is marked down (capacity = 0). Downstream dependent services degrade, critical path encounters a 500 ms timeout per hop, and throughput drops.
-- **`scale-service`**: Doubles replicas for `targetNodeId` (capped at 50), reducing component utilization and stabilizing latency.
+### Scenario Behaviors at 12,000 RPM on Demo Graph
+The demo graph is balanced such that:
+- **`normal`**:
+  - `node-order-service` operates at **75% utilisation** (6,000 RPM load / 8,000 RPM capacity with 2 replicas, 1 core), forming **one mild bottleneck** in the 60–80% target range.
+  - `node-auth-service` operates at **38% utilisation** (6,000 RPM load / 16,000 RPM capacity with 2 replicas, 2 cores).
+  - `node-postgres-db` operates at **60% utilisation** (2,400 RPM load / 4,000 RPM capacity with 1 replica, 2 cores).
+  - Sustained throughput is **12,000 RPM**; critical path latency is **131 ms**.
+- **`remove-cache`**:
+  - In-memory cache is marked absent. Cache read absorption ($85\%$ hit ratio) is bypassed, deflecting full read query volume to backing databases (`node-postgres-db` load increases by 1,800 RPM to 4,200 RPM).
+  - Database utilisation jumps to **105%**, pushing `node-postgres-db` into the bottleneck list alongside `node-order-service`.
+  - Latency increases from 131 ms to **286 ms**, derived directly from the recomputed database queuing delay plus a documented 5 ms flat cache-miss penalty.
+- **`service-failure`**:
+  - Targeted node is marked down. Requests whose path traverses the failed node are lost or degraded.
+  - The share of traffic lost is computed from dynamic load propagation ($50\%$ for Order Service).
+  - Degraded paths incur a documented **500 ms client timeout penalty**.
+  - Throughput drops from 12,000 RPM to **6,000 RPM**; critical path latency is **541 ms**.
+- **`scale-service`**:
+  - Scaling `node-order-service` (the normal bottleneck) doubles replicas from 2 to 4 (capacity becomes 16,000 RPM).
+  - Utilisation visibly drops from 75% to **38%**.
+  - Total critical path latency visibly drops from 131 ms to **95 ms**, and the bottleneck list becomes empty.
 
 ---
 
-## 5. Replacing `mockSimulation` with a Real Backend API
+## 5. Canvas Edge Visual Distinction
 
-To transition from client-side mock estimation to a live simulation service or server-side profiler:
+Connections on the canvas are visually distinguishable by line dash style (not colour alone):
+- **`http`**: Solid line (`strokeWidth: 1.5`, `#5b8dee`)
+- **`database`**: Medium-dashed line (`strokeDasharray: '6 4'`, `strokeWidth: 2`, `#a87ffb`)
+- **`cache`**: Fine-dotted line (`strokeDasharray: '2 3'`, `strokeWidth: 2`, `#f5c842`)
+- **`event`**: Long-dashed line (`strokeDasharray: '10 5'`, `strokeWidth: 1.5`, `#ff8a50`)
+- **`dependency`**: Dash-dot pattern (`strokeDasharray: '8 3 2 3'`, `strokeWidth: 1.5`, `#6ecf8e`)
 
-1. Maintain the exact function signature in `services/mockSimulation.ts` or create an adapter:
-   ```typescript
-   export async function runSimulation(
-     nodes: Node<ArchitectureNodeData>[],
-     edges: Edge<ArchitectureEdgeData>[],
-     inputs: SimulationInputs
-   ): Promise<SimulationResult>
-   ```
-2. Send the serialized node topology, edge list, and simulation parameters as a JSON payload to your backend simulation endpoint (e.g. `POST /api/v1/architecture/simulate`).
-3. Return the response adhering to the `SimulationResult` interface. Note that `isMock` can be flipped to `false` when real APM telemetry is integrated.
-4. In `components/SimulationPanel.tsx`, simply `await` the simulation call inside `handleRunSimulation`.
+Connection labels are rendered with high-contrast pills (`#141720` background with `#e2e8f0` text) to remain sharp across all zoom levels.
 
 ---
 
-## 6. Integration Guide for Member 1 (App Shell & Routing)
+## 6. Export and Import JSON
 
-### Route Registration
-In the router configuration (e.g. `App.tsx` or `routes.tsx`), import and mount `ArchitectureStudioPage`:
-
-```tsx
-import { ArchitectureStudioPage } from './features/architecture/pages/ArchitectureStudioPage';
-
-// Inside your Route definition:
-<Route path="/architecture" element={<ArchitectureStudioPage />} />
-```
-
-### Parent Layout & Height Assumptions
-- `ArchitectureStudioPage` uses `height: 100dvh` (full viewport height) and `display: flex; flex-direction: column`.
-- If the global layout provides a shared top navigation bar (e.g. `<AppHeader />`), wrap `ArchitectureStudioPage` in a container with `height: calc(100vh - HEADER_HEIGHT)` or set `height: 100%` on `.page` so it fills the available content area without double scrollbars.
-- `ReactFlowProvider` is already embedded inside `ArchitectureStudioPage`. Member 1 does not need to wrap it with an external React Flow provider.
+- **Export JSON**: Downloads the current diagram as `nexus-architecture.json`. Transient simulation state (`simulationStatus`, `simulationUtilisation`) is stripped.
+- **Import JSON**: Validates diagram structure via pure functions in `utils/graphSerialization.ts`:
+  - Validates `nodes` and `edges` arrays.
+  - Validates unique string IDs for nodes and edges.
+  - Validates node coordinates (finite numbers `x`, `y`) and kind.
+  - Enforces field constraints using domain validators (name required, replicas 1–50, cpuCores 0.1–64, memoryMb 128–65,536).
+  - Validates that edges reference existing node IDs and prevents self-links.
+  - Rejects corrupt or invalid files with an inline non-blocking toast, leaving the current graph unchanged.
+  - On success, replaces the graph and clears selection and simulation highlights.
 
 ---
 

@@ -75,12 +75,21 @@ export interface UseArchitectureGraphReturn {
   notification: string | null;
   clearNotification: () => void;
 
-  /** Simulation status highlights */
+  /** Simulation status highlights and per-node utilisation */
   simulationHighlights: Record<string, 'normal' | 'warning' | 'critical'> | null;
+  simulationUtilisations: Record<string, number> | null;
   setSimulationHighlights: (
     highlights: Record<string, 'normal' | 'warning' | 'critical'> | null,
+    utilisations?: Record<string, number> | null,
   ) => void;
   clearSimulationHighlights: () => void;
+
+  /** Replace entire graph with imported diagram */
+  loadGraph: (
+    newNodes: Node<ArchitectureNodeData>[],
+    newEdges: Edge<ArchitectureEdgeData>[],
+  ) => void;
+  showNotification: (message: string) => void;
 }
 
 export function useArchitectureGraph(): UseArchitectureGraphReturn {
@@ -93,13 +102,28 @@ export function useArchitectureGraph(): UseArchitectureGraphReturn {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
 
   const [notification, setNotification] = useState<string | null>(null);
-  const [simulationHighlights, setSimulationHighlights] = useState<
+  const [simulationHighlights, setSimulationHighlightsState] = useState<
     Record<string, 'normal' | 'warning' | 'critical'> | null
+  >(null);
+  const [simulationUtilisations, setSimulationUtilisations] = useState<
+    Record<string, number> | null
   >(null);
 
   const clearSimulationHighlights = useCallback(() => {
-    setSimulationHighlights(null);
+    setSimulationHighlightsState(null);
+    setSimulationUtilisations(null);
   }, []);
+
+  const setSimulationHighlights = useCallback(
+    (
+      highlights: Record<string, 'normal' | 'warning' | 'critical'> | null,
+      utilisations?: Record<string, number> | null,
+    ) => {
+      setSimulationHighlightsState(highlights);
+      setSimulationUtilisations(utilisations ?? null);
+    },
+    [],
+  );
 
   const clearNotification = useCallback(() => {
     setNotification(null);
@@ -117,6 +141,20 @@ export function useArchitectureGraph(): UseArchitectureGraphReturn {
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
   }, []);
+
+  const loadGraph = useCallback(
+    (
+      newNodes: Node<ArchitectureNodeData>[],
+      newEdges: Edge<ArchitectureEdgeData>[],
+    ) => {
+      clearSelection();
+      clearSimulationHighlights();
+      setNodes(newNodes);
+      setEdges(newEdges);
+      showNotification('Architecture graph imported successfully.');
+    },
+    [clearSelection, clearSimulationHighlights, setNodes, setEdges, showNotification],
+  );
 
   // ── Connection Handler ────────────────────────────────────────────────────────
   const onConnect = useCallback<OnConnect>(
@@ -297,19 +335,21 @@ export function useArchitectureGraph(): UseArchitectureGraphReturn {
 
   // ── Display Nodes with transient simulation overlay ──────────────────────────
   const displayNodes = useMemo(() => {
-    if (!simulationHighlights) return nodes;
+    if (!simulationHighlights && !simulationUtilisations) return nodes;
     return nodes.map((node) => {
-      const simStatus = simulationHighlights[node.id];
-      if (!simStatus) return node;
+      const simStatus = simulationHighlights?.[node.id];
+      const simUtil = simulationUtilisations?.[node.id];
+      if (!simStatus && simUtil === undefined) return node;
       return {
         ...node,
         data: {
           ...node.data,
-          simulationStatus: simStatus,
+          ...(simStatus ? { simulationStatus: simStatus } : {}),
+          ...(simUtil !== undefined ? { simulationUtilisation: simUtil } : {}),
         },
       };
     });
-  }, [nodes, simulationHighlights]);
+  }, [nodes, simulationHighlights, simulationUtilisations]);
 
   return {
     nodes: displayNodes,
@@ -333,8 +373,11 @@ export function useArchitectureGraph(): UseArchitectureGraphReturn {
     deleteEdge,
     notification,
     clearNotification,
+    showNotification,
     simulationHighlights,
+    simulationUtilisations,
     setSimulationHighlights,
     clearSimulationHighlights,
+    loadGraph,
   };
 }

@@ -37,6 +37,8 @@ export interface ArchitectureNodeData extends Record<string, unknown> {
   status?: 'normal' | 'warning' | 'critical';
   /** Transient simulation overlay status (does not overwrite user-stored status). */
   simulationStatus?: 'normal' | 'warning' | 'critical';
+  /** Transient simulation utilisation ratio (0 to 1+) for display on node. */
+  simulationUtilisation?: number;
 }
 
 /**
@@ -112,4 +114,8 @@ export interface SimulationResult {
    * model, not a live profiler, so the UI can show an appropriate disclaimer.
    */
   isMock: true;
+  /**
+   * Optional map of per-node utilisation ratio (0 to 1+), keyed by node ID.
+   */
+  nodeUtilisation?: Record<string, number>;
 }

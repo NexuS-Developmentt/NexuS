@@ -18,13 +18,16 @@
 
 import { useCallback, useEffect } from 'react';
 import { ReactFlowProvider, useReactFlow } from '@xyflow/react';
-
 import { ArchitectureCanvas } from '../components/ArchitectureCanvas';
 import { GraphToolbar } from '../components/GraphToolbar';
 import { NodePalette } from '../components/NodePalette';
 import { PropertiesPanel } from '../components/PropertiesPanel';
 import { SimulationPanel } from '../components/SimulationPanel';
 import { useArchitectureGraph } from '../hooks/useArchitectureGraph';
+import {
+  serializeArchitectureGraph,
+  validateAndParseArchitectureJson,
+} from '../utils/graphSerialization';
 import styles from './ArchitectureStudioPage.module.css';
 
 // ── Inner page (must be inside ReactFlowProvider) ─────────────────────────────
@@ -43,6 +46,41 @@ function InnerPage() {
       fitView({ padding: 0.15, duration: 400 });
     }, 50);
   }, [graph, fitView]);
+
+  const handleExportJson = useCallback(() => {
+    const jsonStr = serializeArchitectureGraph(graph.rawNodes, graph.edges);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'nexus-architecture.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    graph.showNotification('Architecture exported as nexus-architecture.json');
+  }, [graph]);
+
+  const handleImportFile = useCallback(
+    async (file: File) => {
+      try {
+        const text = await file.text();
+        const result = validateAndParseArchitectureJson(text);
+        if (!result.valid) {
+          graph.showNotification(`Import rejected: ${result.error}`);
+          return;
+        }
+        graph.loadGraph(result.data.nodes, result.data.edges);
+        setTimeout(() => {
+          fitView({ padding: 0.15, duration: 400 });
+        }, 50);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to read file';
+        graph.showNotification(`Import rejected: ${msg}`);
+      }
+    },
+    [graph, fitView],
+  );
 
   // ── Node and Edge deletion handlers ─────────────────────────────────────────
 
@@ -120,7 +158,12 @@ function InnerPage() {
 
       {/* ── Toolbar ── */}
       <div className={styles.toolbarRow}>
-        <GraphToolbar onFitView={handleFitView} onReset={handleReset} />
+        <GraphToolbar
+          onFitView={handleFitView}
+          onReset={handleReset}
+          onExport={handleExportJson}
+          onImportFile={handleImportFile}
+        />
       </div>
 
       {/* ── Body: palette + canvas + properties panel ── */}

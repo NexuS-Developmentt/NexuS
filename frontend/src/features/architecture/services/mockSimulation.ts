@@ -61,7 +61,7 @@ export const BASE_CAPACITIES: Record<ArchitectureNodeKind, number> = {
   cache: 25_000,
   service: 4_000,
   queue: 12_000,
-  database: 2_500,
+  database: 2_000,
 };
 
 /**
@@ -84,19 +84,31 @@ export const DEFAULT_NODE_VALUES: Record<
 > = {
   gateway: { replicas: 2, cpuCores: 1 },
   service: { replicas: 2, cpuCores: 1 },
-  database: { replicas: 1, cpuCores: 4 },
+  database: { replicas: 1, cpuCores: 2 },
   cache: { replicas: 1, cpuCores: 1 },
   queue: { replicas: 2, cpuCores: 1 },
 };
 
 /**
- * Cache hit ratio under normal conditions (85% of traffic absorbed by cache).
- * When cache is removed, 100% of this traffic cascades directly to downstream databases.
+ * Cache hit ratio under normal conditions (85% of read traffic absorbed by cache).
+ * When cache is removed, full read volume cascades directly to backing databases.
  */
 export const CACHE_HIT_RATIO = 0.85;
 
 /**
- * Utilisation threshold (75%) above which a node is flagged as a bottleneck.
+ * Small flat serialization / cache-miss latency cost in milliseconds (5ms)
+ * added when queries must bypass cache and query database directly.
+ */
+export const FLAT_CACHE_MISS_PENALTY_MS = 5;
+
+/**
+ * Fallback client timeout penalty in milliseconds (500ms) incurred by requests
+ * attempting to traverse a failed service.
+ */
+export const FAILED_SERVICE_TIMEOUT_MS = 500;
+
+/**
+ * Utilisation threshold (75%) at or above which a node is flagged as a bottleneck.
  */
 export const BOTTLENECK_UTILISATION_THRESHOLD = 0.75;
 
@@ -123,7 +135,7 @@ interface NodeSimulationState {
  * @param nodes Array of React Flow nodes
  * @param edges Array of React Flow edges
  * @param inputs Simulation configuration inputs
- * @returns SimulationResult containing latency, CPU, throughput, bottlenecks, and recommendations
+ * @returns SimulationResult containing latency, CPU, throughput, bottlenecks, recommendations, and nodeUtilisation
  * @throws SimulationValidationError on invalid inputs
  */
 export function runMockSimulation(
@@ -144,11 +156,12 @@ export function runMockSimulation(
       estimatedThroughputRpm: 0,
       bottleneckNodeIds: [],
       explanation:
-        'The architecture graph is empty. Add components to run performance simulations. (Illustrative mock estimate, not measured data).',
+        'The architecture graph is empty. Add components from the palette to begin architectural modeling. (Illustrative mock estimate, not measured data).',
       recommendations: [
         'Add an API Gateway or Service from the palette to begin architectural modeling.',
       ],
       isMock: true,
+      nodeUtilisation: {},
     };
   }
 
@@ -158,10 +171,9 @@ export function runMockSimulation(
   for (const node of nodes) {
     const kind = node.data?.kind ?? 'service';
     const defaults = DEFAULT_NODE_VALUES[kind] ?? { replicas: 1, cpuCores: 1 };
-    let replicas = node.data?.replicas ?? defaults.replicas;
-    const cpuCores = node.data?.cpuCores ?? defaults.cpuCores;
+    let replicas = Math.max(1, node.data?.replicas ?? defaults.replicas);
+    const cpuCores = Math.max(0.1, node.data?.cpuCores ?? defaults.cpuCores);
 
-    // Apply scenario-specific node alterations
     let isDown = false;
     if (scenario === 'service-failure' && node.id === targetNodeId) {
       isDown = true;
@@ -173,7 +185,7 @@ export function runMockSimulation(
     }
 
     const baseCap = BASE_CAPACITIES[kind] ?? BASE_CAPACITIES.service;
-    const capacity = isDown ? 0 : replicas * cpuCores * baseCap;
+    const capacity = isDown ? 0 : Math.max(1, Math.round(replicas * cpuCores * baseCap));
 
     nodeMap.set(node.id, {
       id: node.id,
@@ -224,6 +236,9 @@ export function runMockSimulation(
     }
   }
 
+  // Track total load routed into the failed node for dynamic throughput reduction
+  let failedNodeIncomingLoad = 0;
+
   // BFS with depth cap and visited count per node to safely handle cycles
   const queue: Array<{ id: string; incomingLoad: number; depth: number }> = entryNodeIds.map(
     (id) => ({ id, incomingLoad: initialRpmPerEntry, depth: 0 }),
@@ -249,28 +264,47 @@ export function runMockSimulation(
     // Load passing through this node
     let outgoingLoad = incomingLoad;
 
-    // In remove-cache scenario, if downstream is cache, bypass cache load directly to databases
-    if (currNode.isDown && scenario === 'service-failure') {
-      // Failed node drops outgoing requests or creates retry traffic
-      outgoingLoad = incomingLoad * 0.1; // only residual error/timeout traffic
+    if (scenario === 'service-failure' && currNode.isDown) {
+      // Failed node drops outgoing requests; only minimal 5% degraded/retry traffic continues
+      outgoingLoad = incomingLoad * 0.05;
     }
 
-    const loadPerChild = outgoingLoad / children.length;
+    const loadPerChild = children.length > 0 ? outgoingLoad / children.length : 0;
 
     for (const childId of children) {
       const childNode = nodeMap.get(childId);
       if (!childNode) continue;
 
+      // Track traffic routed into failed node
+      if (scenario === 'service-failure' && childId === targetNodeId) {
+        failedNodeIncomingLoad += loadPerChild;
+      }
+
+      // Handle remove-cache: cache is bypassed, deflect queries to backing database
       if (scenario === 'remove-cache' && childNode.kind === 'cache') {
-        // Cache is bypassed: route its share directly to cache's downstream nodes
-        const cacheDownstream = adj.get(childId) ?? [];
-        if (cacheDownstream.length > 0) {
-          const loadPerDb = (loadPerChild * (1 / (1 - CACHE_HIT_RATIO * 0.5))) / cacheDownstream.length;
-          for (const dbId of cacheDownstream) {
+        // Find target database: downstream of cache, or sibling DBs of caller, or any DB
+        let targetDbIds = (adj.get(childId) ?? []).filter(
+          (cid) => nodeMap.get(cid)?.kind === 'database',
+        );
+        if (targetDbIds.length === 0) {
+          targetDbIds = children.filter((cid) => nodeMap.get(cid)?.kind === 'database');
+        }
+        if (targetDbIds.length === 0) {
+          targetDbIds = Array.from(nodeMap.values())
+            .filter((n) => n.kind === 'database')
+            .map((n) => n.id);
+        }
+
+        if (targetDbIds.length > 0) {
+          // Re-route cache load to database.
+          // Cache absorbed CACHE_HIT_RATIO (85%) of queries. Without cache, database receives
+          // full read volume (1.5x cache incoming load factor to reflect un-absorbed query volume).
+          const deflectedDbLoad = (loadPerChild * 1.5) / targetDbIds.length;
+          for (const dbId of targetDbIds) {
             const dbNode = nodeMap.get(dbId);
             if (dbNode) {
-              dbNode.load += loadPerDb;
-              queue.push({ id: dbId, incomingLoad: loadPerDb, depth: depth + 1 });
+              dbNode.load += deflectedDbLoad;
+              queue.push({ id: dbId, incomingLoad: deflectedDbLoad, depth: depth + 1 });
             }
           }
         }
@@ -282,11 +316,23 @@ export function runMockSimulation(
     }
   }
 
+  // If entry node itself failed in service-failure, record full entry load
+  if (scenario === 'service-failure' && targetNodeId && entryNodeIds.includes(targetNodeId)) {
+    failedNodeIncomingLoad = nodeMap.get(targetNodeId)?.load ?? requestsPerMinute;
+  }
+
   // 7. Calculate Per-Node Utilisation and Non-linear Latency
   for (const [, state] of nodeMap) {
     if (state.isDown) {
-      state.utilisation = 1.0;
-      state.latencyMs = 500; // 500ms timeout penalty
+      if (scenario === 'remove-cache') {
+        // Cache is cleanly bypassed: no load, 0 latency on critical path
+        state.utilisation = 0;
+        state.latencyMs = 0;
+      } else {
+        // Service failure: degraded/timeout penalty
+        state.utilisation = 1.0;
+        state.latencyMs = FAILED_SERVICE_TIMEOUT_MS; // documented 500ms client timeout penalty
+      }
       continue;
     }
 
@@ -295,14 +341,20 @@ export function runMockSimulation(
     // Non-linear latency penalty using M/M/1 queueing delay curve
     // Latency = baseLatency * (1 + rho / (1 - min(rho, 0.95)))
     const baseLat = BASE_LATENCIES[state.kind] ?? 10;
-    const rho = Math.min(state.utilisation, 0.95);
+    const rho = Math.max(0, Math.min(state.utilisation, 0.95));
     const queueMultiplier = 1 + rho / (1 - rho);
-    // Cap latency at 10x base latency to prevent extreme spikes
-    state.latencyMs = Math.round(baseLat * Math.min(10, queueMultiplier));
+
+    // Flat cache miss penalty added to database in remove-cache scenario
+    const flatMissCost =
+      scenario === 'remove-cache' && state.kind === 'database'
+        ? FLAT_CACHE_MISS_PENALTY_MS
+        : 0;
+
+    // Cap latency multiplier at 10x base latency to prevent unbounded spikes
+    state.latencyMs = Math.round(baseLat * Math.min(10, queueMultiplier)) + flatMissCost;
   }
 
   // 8. Calculate Critical Path (Slowest End-to-End Latency)
-  // DFS with cycle-detection set along recursion stack
   let maxPathLatency = 0;
 
   function findMaxPath(nodeId: string, currentPathLatency: number, stack: Set<string>) {
@@ -332,35 +384,56 @@ export function runMockSimulation(
     findMaxPath(entryId, 0, new Set<string>());
   }
 
+  // Fallback: if all entry paths had 0 latency, use max node latency
+  if (maxPathLatency === 0 && nodeMap.size > 0) {
+    maxPathLatency = Math.max(...Array.from(nodeMap.values()).map((n) => n.latencyMs));
+  }
+
   // 9. Throughput Calculation
-  // Throughput is constrained by the minimum capacity-to-load ratio across active nodes
+  // In service-failure: compute share of entry traffic routed through failed node from load propagation
+  let failedTrafficShare = 0;
+  if (scenario === 'service-failure' && targetNodeId) {
+    failedTrafficShare = Math.min(1.0, Math.max(0, failedNodeIncomingLoad / requestsPerMinute));
+  }
+
+  // Throughput constrained by lowest capacity-to-load ratio across active healthy nodes
   let minCapacityRatio = 1.0;
+  let limiterNode: NodeSimulationState | null = null;
+
   for (const [, state] of nodeMap) {
-    if (state.isDown) {
-      // If an entry node or critical single point of failure fails, throughput collapses
-      if (entryNodeIds.includes(state.id)) {
-        minCapacityRatio = 0.05;
-      }
-      continue;
-    }
+    if (state.isDown) continue;
     if (state.load > 0 && state.capacity > 0) {
       const ratio = state.capacity / state.load;
       if (ratio < minCapacityRatio) {
         minCapacityRatio = ratio;
+        limiterNode = state;
       }
     }
   }
 
+  // Calculate sustained throughput
+  // In service-failure, throughput is strictly reduced by (1 - failedTrafficShare)
+  let rawThroughput: number;
+  if (scenario === 'service-failure') {
+    const healthyThroughput = requestsPerMinute * (1 - failedTrafficShare);
+    rawThroughput = healthyThroughput * Math.min(1.0, minCapacityRatio);
+  } else {
+    rawThroughput = requestsPerMinute * Math.min(1.0, minCapacityRatio);
+  }
+
   const estimatedThroughputRpm = Math.max(
     0,
-    Math.min(requestsPerMinute, Math.round(requestsPerMinute * Math.min(1, minCapacityRatio))),
+    Math.min(requestsPerMinute, Math.round(Number.isFinite(rawThroughput) ? rawThroughput : 0)),
   );
 
   // 10. CPU Percent: Average CPU utilisation across all active nodes (0-100)
   const activeNodes = Array.from(nodeMap.values()).filter((n) => !n.isDown);
-  const totalUtil = activeNodes.reduce((sum, n) => sum + Math.min(1, n.utilisation), 0);
-  const avgUtil = activeNodes.length > 0 ? totalUtil / activeNodes.length : 1.0;
-  const estimatedCpuPercent = Math.min(100, Math.max(0, Math.round(avgUtil * 100)));
+  const totalUtil = activeNodes.reduce((sum, n) => sum + Math.min(1.0, n.utilisation), 0);
+  const avgUtil = activeNodes.length > 0 ? totalUtil / activeNodes.length : 0;
+  const estimatedCpuPercent = Math.max(
+    0,
+    Math.min(100, Math.round(Number.isFinite(avgUtil) ? avgUtil * 100 : 0)),
+  );
 
   // 11. Identify Bottlenecks
   // Nodes with utilisation >= BOTTLENECK_UTILISATION_THRESHOLD (0.75), sorted descending
@@ -370,7 +443,15 @@ export function runMockSimulation(
 
   const bottleneckNodeIds = bottlenecks.map((n) => n.id);
 
-  // 12. Build Explanation and Recommendations
+  // 12. Build nodeUtilisation record (0 to 1+)
+  const nodeUtilisation: Record<string, number> = {};
+  for (const [id, state] of nodeMap) {
+    nodeUtilisation[id] = Number.isFinite(state.utilisation)
+      ? Number(state.utilisation.toFixed(2))
+      : 0;
+  }
+
+  // 13. Build Explanation and Recommendations
   const explanation = buildExplanation(
     scenario,
     requestsPerMinute,
@@ -380,6 +461,8 @@ export function runMockSimulation(
     estimatedThroughputRpm,
     maxPathLatency,
     adj,
+    limiterNode,
+    failedTrafficShare,
   );
 
   const recommendations = buildRecommendations(
@@ -389,16 +472,18 @@ export function runMockSimulation(
     targetNodeId,
     maxPathLatency,
     adj,
+    failedTrafficShare,
   );
 
   return {
-    estimatedLatencyMs: maxPathLatency,
+    estimatedLatencyMs: Math.max(0, Math.round(Number.isFinite(maxPathLatency) ? maxPathLatency : 0)),
     estimatedCpuPercent,
     estimatedThroughputRpm,
     bottleneckNodeIds,
     explanation,
     recommendations,
     isMock: true,
+    nodeUtilisation,
   };
 }
 
@@ -469,6 +554,8 @@ function buildExplanation(
   throughputRpm: number,
   latencyMs: number,
   adj: Map<string, string[]>,
+  limiterNode: NodeSimulationState | null,
+  failedTrafficShare: number,
 ): string {
   const disclaimer =
     '(Note: This is an illustrative heuristic estimate based on static architecture modeling, not measured production data).';
@@ -478,32 +565,44 @@ function buildExplanation(
       if (bottlenecks.length === 0) {
         return `Baseline simulation running at ${rpm.toLocaleString()} RPM. All components are operating comfortably within capacity limits with an estimated critical path latency of ${latencyMs} ms and sustained throughput of ${throughputRpm.toLocaleString()} RPM. ${disclaimer}`;
       }
-      const topNames = bottlenecks.map((b) => b.label).join(', ');
-      return `Baseline simulation running at ${rpm.toLocaleString()} RPM. Elevated utilisation detected on ${topNames}, constraining maximum sustainable throughput to ${throughputRpm.toLocaleString()} RPM. ${disclaimer}`;
+      const topNames = bottlenecks
+        .map((b) => `${b.label} (${Math.round(b.utilisation * 100)}% CPU)`)
+        .join(', ');
+
+      if (throughputRpm >= rpm) {
+        return `Baseline simulation running at ${rpm.toLocaleString()} RPM. System sustains full throughput (${throughputRpm.toLocaleString()} RPM) with critical path latency of ${latencyMs} ms. Elevated utilisation detected on ${topNames}, leaving narrow headroom for traffic spikes. ${disclaimer}`;
+      }
+
+      const limiterDesc = limiterNode
+        ? `capacity saturation on ${limiterNode.label} (${Math.round(limiterNode.utilisation * 100)}% CPU)`
+        : 'component capacity constraints';
+      return `Baseline simulation running at ${rpm.toLocaleString()} RPM. Elevated utilisation detected on ${topNames}. Maximum sustainable throughput is limited to ${throughputRpm.toLocaleString()} RPM due to ${limiterDesc}. ${disclaimer}`;
     }
 
     case 'remove-cache': {
       const dbNodes = Array.from(nodeMap.values()).filter((n) => n.kind === 'database');
-      const dbNames = dbNodes.map((n) => `${n.label} (${Math.round(n.utilisation * 100)}% CPU)`).join(', ');
-      return `Cache removal simulation running at ${rpm.toLocaleString()} RPM. In-memory cache layer was bypassed, deflecting full read query volume directly to backing databases: ${dbNames}. End-to-end latency increased to ${latencyMs} ms due to missing cache hits. ${disclaimer}`;
+      const dbNames = dbNodes
+        .map((n) => `${n.label} (${Math.round(n.utilisation * 100)}% CPU)`)
+        .join(', ');
+      return `Cache removal simulation running at ${rpm.toLocaleString()} RPM. In-memory cache layer was bypassed, deflecting full read query volume directly to backing databases: ${dbNames}. End-to-end critical path latency increased to ${latencyMs} ms driven by elevated database thread utilisation and a small 5 ms flat cache-miss penalty. ${disclaimer}`;
     }
 
     case 'service-failure': {
       const failedNode = targetNodeId ? nodeMap.get(targetNodeId) : null;
       const failedLabel = failedNode ? failedNode.label : targetNodeId;
       const dependents = targetNodeId ? findDownstreamNodes(targetNodeId, adj, nodeMap) : [];
-      const dependentNames = dependents.length > 0
-        ? dependents.map((d) => d.label).join(', ')
-        : 'none';
+      const dependentNames =
+        dependents.length > 0 ? dependents.map((d) => d.label).join(', ') : 'none';
+      const lostPercent = Math.round(failedTrafficShare * 100);
 
-      return `Service failure simulation at ${rpm.toLocaleString()} RPM. ${failedLabel} is down. Affected downstream dependencies: ${dependentNames}. Requests encountered timeouts and fallback degradations, capping throughput at ${throughputRpm.toLocaleString()} RPM with critical path latency of ${latencyMs} ms. ${disclaimer}`;
+      return `Service failure simulation at ${rpm.toLocaleString()} RPM. ${failedLabel} is down, resulting in ${lostPercent}% of incoming traffic being lost or degraded. Affected downstream dependencies: ${dependentNames}. Degraded paths encounter a 500 ms timeout penalty, reducing sustained throughput to ${throughputRpm.toLocaleString()} RPM with critical path latency of ${latencyMs} ms. ${disclaimer}`;
     }
 
     case 'scale-service': {
       const scaledNode = targetNodeId ? nodeMap.get(targetNodeId) : null;
       const scaledLabel = scaledNode ? scaledNode.label : targetNodeId;
       const utilPercent = scaledNode ? Math.round(scaledNode.utilisation * 100) : 0;
-      return `Scale service simulation at ${rpm.toLocaleString()} RPM. Replicas for ${scaledLabel} were doubled to ${scaledNode?.replicas ?? 2} instances, reducing its CPU load to ${utilPercent}% and stabilizing end-to-end latency at ${latencyMs} ms. ${disclaimer}`;
+      return `Scale service simulation at ${rpm.toLocaleString()} RPM. Replicas for ${scaledLabel} were doubled to ${scaledNode?.replicas ?? 2} instances, reducing its CPU load to ${utilPercent}% and stabilizing end-to-end critical path latency at ${latencyMs} ms. ${disclaimer}`;
     }
   }
 }
@@ -517,6 +616,7 @@ function buildRecommendations(
   targetNodeId: string | undefined,
   latencyMs: number,
   adj: Map<string, string[]>,
+  failedTrafficShare: number,
 ): string[] {
   const recs: string[] = [];
 
@@ -525,24 +625,31 @@ function buildRecommendations(
     const db = Array.from(nodeMap.values()).find((n) => n.kind === 'database');
     if (db) {
       recs.push(
-        `Provision a distributed cache cluster (e.g., Redis) in front of ${db.label} to restore 85% query absorption and relieve database thread contention.`,
+        `Provision a distributed cache cluster (e.g., Redis) in front of ${db.label}: database utilisation is at ${Math.round(db.utilisation * 100)}% without caching. Caching restores 85% read query absorption.`,
       );
     }
   } else if (scenario === 'service-failure' && targetNodeId) {
     const target = nodeMap.get(targetNodeId);
     const dependents = findDownstreamNodes(targetNodeId, adj, nodeMap);
     if (target) {
+      const lostRpm = Math.round(failedTrafficShare * 100);
+      const depNames =
+        dependents.length > 0
+          ? ` and dependents (${dependents.map((d) => d.label).join(', ')})`
+          : '';
       recs.push(
-        `Implement resilient circuit breaker patterns and fallback responses across dependents (${dependents.map((d) => d.label).join(', ') || 'callers'}) of ${target.label}.`,
+        `Implement resilient circuit breaker patterns and fallback responses across callers${depNames} of ${target.label} to prevent cascading failures (${lostRpm}% traffic impact).`,
       );
     }
   }
 
-  // Bottleneck recommendations (naming actual nodes)
+  // Bottleneck recommendations naming real nodes with computed numbers
   for (const b of bottlenecks.slice(0, 2)) {
-    const nextReplicas = Math.min(50, b.replicas + 1);
+    const currentPercent = Math.round(b.utilisation * 100);
+    const targetReplicas = Math.min(50, Math.ceil(b.replicas * (b.utilisation / 0.65)));
+    const nextReplicas = Math.max(b.replicas + 1, targetReplicas);
     recs.push(
-      `Scale out ${b.label}: utilisation is currently at ${Math.round(b.utilisation * 100)}%. Scale replicas from ${b.replicas} to ${nextReplicas} to maintain headroom.`,
+      `Scale out ${b.label}: utilisation is currently at ${currentPercent}%. Increasing replicas from ${b.replicas} to ${nextReplicas} will bring utilisation down below 65%.`,
     );
   }
 
@@ -552,14 +659,14 @@ function buildRecommendations(
   );
   if (heavyDb && !recs.some((r) => r.includes(heavyDb.label))) {
     recs.push(
-      `Introduce read replicas or index optimization for ${heavyDb.label} to distribute read queries across multiple storage instances.`,
+      `Introduce read replicas or query index optimization for ${heavyDb.label} (currently at ${Math.round(heavyDb.utilisation * 100)}% utilisation) to distribute read queries.`,
     );
   }
 
   // Latency recommendation
   if (latencyMs > 80 && recs.length < 4) {
     recs.push(
-      `End-to-end critical path latency is elevated (${latencyMs} ms). Consider decoupling synchronous RPC steps using asynchronous message queues.`,
+      `Critical path latency is elevated (${latencyMs} ms). Consider decoupling synchronous RPC steps using asynchronous message queues.`,
     );
   }
 
@@ -577,7 +684,6 @@ function buildRecommendations(
     }
   }
 
-  // Ensure 2 to 4 recommendations
   return recs.slice(0, 4);
 }
 
