@@ -71,3 +71,13 @@ def test_failure_requires_target_component():
         "scenario": {"type": "service_failure"},
     })
     assert response.status_code == 422
+
+
+def test_failure_impact_includes_upstream_and_downstream_components():
+    payload = {
+        "architecture": architecture(),
+        "scenario": {"type": "service_failure", "target_component_id": "orders"},
+    }
+    response = client.post("/simulate", json=payload)
+    assert response.status_code == 200
+    assert response.json()["after"]["impacted_component_ids"] == ["db", "gateway"]
