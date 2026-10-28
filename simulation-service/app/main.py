@@ -135,6 +135,12 @@ def _evaluate(architecture: Architecture, traffic_rpm: float, scenario: Scenario
     if failed_id:
         active_ids.discard(failed_id)
 
+    # Keep the full graph for failure impact tracing; use a separate active
+    # graph for load propagation after unavailable components are removed.
+    full_adjacency: dict[str, list[str]] = {node_id: [] for node_id in nodes}
+    for edge in edges:
+        full_adjacency[edge.source].append(edge.target)
+
     adjacency: dict[str, list[str]] = {node_id: [] for node_id in nodes}
     indegree = {node_id: 0 for node_id in nodes}
     for edge in edges:
@@ -211,7 +217,7 @@ def _evaluate(architecture: Architecture, traffic_rpm: float, scenario: Scenario
     estimated_throughput = min(traffic_rpm, max_capacity) if max_capacity else 0
     impacted = []
     if failed_id:
-        downstream = _reachable(adjacency.get(failed_id, []), adjacency) if failed_id in adjacency else set()
+        downstream = _reachable(full_adjacency.get(failed_id, []), full_adjacency)
         upstream = {e.source for e in edges if e.target == failed_id}
         impacted = sorted((downstream | upstream) - {failed_id})
     return {
