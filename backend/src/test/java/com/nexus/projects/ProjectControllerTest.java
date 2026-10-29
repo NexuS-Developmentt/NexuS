@@ -16,7 +16,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -48,12 +47,14 @@ class ProjectControllerTest {
 
     @Test
     void createsProjectAndReturnsCreatedStatus() throws Exception {
-        UUID id = UUID.randomUUID();
-        ProjectResponse project = new ProjectResponse(
-                id, "New Project", "Description",
-                OffsetDateTime.parse("2026-01-01T10:00:00Z"),
-                OffsetDateTime.parse("2026-01-01T10:00:00Z"));
-        when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(id))).thenReturn(List.of(project));
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class), any(UUID.class)))
+                .thenAnswer(invocation -> {
+                    UUID id = invocation.getArgument(2);
+                    return List.of(new ProjectResponse(
+                            id, "New Project", "Description",
+                            OffsetDateTime.parse("2026-01-01T10:00:00Z"),
+                            OffsetDateTime.parse("2026-01-01T10:00:00Z")));
+                });
 
         mockMvc.perform(post("/api/v1/projects")
                         .contentType("application/json")
